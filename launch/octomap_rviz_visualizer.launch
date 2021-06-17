@@ -1,0 +1,50 @@
+<launch>
+
+  <arg name="UAV_NAME" default="$(env UAV_NAME)" />
+  <arg name="LOGGER_DEBUG" default="$(optenv LOGGER_DEBUG false)" />
+
+  <env name="ROSCONSOLE_CONFIG_FILE" if="$(eval arg('LOGGER_DEBUG'))" value="$(find pathfinder)/config/debug_verbosity.yaml" />
+
+    <!-- other args -->
+  <arg name="debug" default="false" />
+  <arg name="standalone" default="false" />
+  <arg name="custom_config" default="" />
+
+  <arg name="node_name" default="octomap_rviz_visualizer" />
+  <arg name="octomap_topic" default="octomap_server/octomap_full" />
+
+  <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch" />
+  <arg unless="$(arg debug)" name="launch_prefix" value="" />
+
+  <arg name="nodelet_manager_name" default="" />
+  <arg     if="$(eval arg('standalone') or arg('debug'))" name="nodelet" value="standalone" />
+  <arg unless="$(eval arg('standalone') or arg('debug'))" name="nodelet" value="load" />
+  <arg     if="$(eval arg('standalone') or arg('debug'))" name="nodelet_manager" value="" />
+  <arg unless="$(eval arg('standalone') or arg('debug'))" name="nodelet_manager" value="$(arg nodelet_manager_name)" />
+
+  <group ns="$(arg UAV_NAME)">
+
+    <node pkg="nodelet" type="nodelet" name="$(arg node_name)" args="$(arg nodelet) octomap_rviz_visualizer/OctomapRvizVisualizer $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
+
+      <rosparam file="$(find octomap_rviz_visualizer)/config/default.yaml" command="load" />
+
+      <rosparam if="$(eval not arg('custom_config') == '')" file="$(arg custom_config)" />
+
+        <!-- topics in -->
+
+      <remap from="~octomap_in" to="$(arg octomap_topic)" />
+
+        <!-- topics out -->
+
+      <remap from="~occupied_cells_vis_array_out" to="~occupied_cells_vis_array" />
+      <remap from="~occupied_cells_vis_array_throttled_out" to="~occupied_cells_vis_array_throttled" />
+      <remap from="~free_cells_vis_array_out" to="~free_cells_vis_array" />
+      <remap from="~free_cells_vis_array_throttled_out" to="~free_cells_vis_array_throttled" />
+      <remap from="~octomap_point_cloud_centers_out" to="~octomap_point_cloud_centers" />
+      <remap from="~octomap_free_centers_out" to="~octomap_free_centers" />
+
+    </node>
+
+  </group>
+
+</launch>

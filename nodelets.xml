@@ -1,0 +1,5 @@
+<library path="lib/libOctomapRvizVisualizer">
+  <class name="octomap_rviz_visualizer/OctomapRvizVisualizer" type="octomap_rviz_visualizer::OctomapRvizVisualizer" base_class_type="nodelet::Nodelet">
+    <description>OctomapRvizVisualizer nodelet</description>
+  </class>
+</library>

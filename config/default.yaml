@@ -1,0 +1,26 @@
+free_throttled_rate: 1.0 # [Hz]
+occupied_throttled_rate: 1.0 # [Hz]
+
+occupancy:
+  cube_size_factor: 1.0
+  min_z: -1.79769e+308
+  max_z: 1.79769e+308
+
+colored_map:
+  enabled: false
+
+height_map:
+  enabled: true
+  color_factor: 0.8
+  color:
+    r: 1.0
+    g: 0.0
+    b: 0.0
+    a: 1.0
+
+publish_free_space: true
+color_free:
+  r: 0.0
+  g: 1.0
+  b: 0.0
+  a: 1.0
