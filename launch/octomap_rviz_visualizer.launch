@@ -24,9 +24,9 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <node pkg="nodelet" type="nodelet" name="$(arg node_name)" args="$(arg nodelet) octomap_rviz_visualizer/OctomapRvizVisualizer $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
+    <node pkg="nodelet" type="nodelet" name="$(arg node_name)" args="$(arg nodelet) octomap_tools/OctomapRvizVisualizer $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
 
-      <rosparam file="$(find octomap_rviz_visualizer)/config/default.yaml" command="load" />
+      <rosparam file="$(find octomap_tools)/config/default.yaml" command="load" />
 
       <rosparam if="$(eval not arg('custom_config') == '')" file="$(arg custom_config)" />
 

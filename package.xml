@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package format="2">
 
-  <name>octomap_rviz_visualizer</name>
+  <name>octomap_tools</name>
   <version>1.0.0</version>
-  <description>The OctoMap rviz visualizer package</description>
+  <description>The OctoMap tools package</description>
 
   <author email="tomas.baca@fel.cvut.cz">Tomas Baca</author>
   <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>

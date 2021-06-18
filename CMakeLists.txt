@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.1.2)
-project(octomap_rviz_visualizer)
+project(octomap_tools)
 
 # Override CXX flags inherited from workspace, if precompiled PCL binaries from debian repos are used
 if (DEFINED ENV{PCL_CROSS_COMPILATION})

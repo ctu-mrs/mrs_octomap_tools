@@ -28,6 +28,9 @@
 
 //}
 
+namespace octomap_tools
+{
+
 namespace octomap_rviz_visualizer
 {
 
@@ -520,5 +523,7 @@ std_msgs::ColorRGBA OctomapRvizVisualizer::heightMapColor(double h) {
 
 }  // namespace octomap_rviz_visualizer
 
+}  // namespace octomap_tools
+
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(octomap_rviz_visualizer::OctomapRvizVisualizer, nodelet::Nodelet)
+PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer, nodelet::Nodelet)
