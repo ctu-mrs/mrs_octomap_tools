@@ -1,7 +1,7 @@
 name: editor
 root: ./
 startup_window: editor
-pre_window: export ROS_MASTER_URI=http://localhost:11311; export ROS_IP=127.0.0.1
+pre_window: export ROS_MASTER_URI=http://localhost:11311; export ROS_IP=127.0.0.1; export UAV_NAME=uav1
 windows:
   - editor:
       layout: tiled
