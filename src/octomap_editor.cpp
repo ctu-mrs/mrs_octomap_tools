@@ -432,24 +432,6 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
   }
 
   publishMarkers();
-
-  // | ------------------- publish the roi TF ------------------- |
-
-  geometry_msgs::TransformStamped tf;
-  tf.header.stamp            = ros::Time::now();
-  tf.header.frame_id         = "map_frame";
-  tf.child_frame_id          = "roi_frame";
-  tf.transform.translation.x = params_.roi_x;
-  tf.transform.translation.y = params_.roi_y;
-  tf.transform.translation.z = params_.roi_z;
-  tf.transform.rotation      = mrs_lib::AttitudeConverter(0, 0, 0);
-
-  try {
-    tf_broadcaster_.sendTransform(tf);
-  }
-  catch (...) {
-    ROS_ERROR("[Odometry]: Exception caught during publishing TF: %s - %s.", tf.child_frame_id.c_str(), tf.header.frame_id.c_str());
-  }
 }
 
 //}
@@ -469,6 +451,24 @@ void OctomapEditor::timerMain([[maybe_unused]] const ros::TimerEvent& evt) {
   publishMap();
 
   publishMarkers();
+
+  // | ------------------- publish the roi TF ------------------- |
+
+  geometry_msgs::TransformStamped tf;
+  tf.header.stamp            = ros::Time::now();
+  tf.header.frame_id         = "map_frame";
+  tf.child_frame_id          = "roi_frame";
+  tf.transform.translation.x = params_.roi_x;
+  tf.transform.translation.y = params_.roi_y;
+  tf.transform.translation.z = params_.roi_z;
+  tf.transform.rotation      = mrs_lib::AttitudeConverter(0, 0, 0);
+
+  try {
+    tf_broadcaster_.sendTransform(tf);
+  }
+  catch (...) {
+    ROS_ERROR("[Odometry]: Exception caught during publishing TF: %s - %s.", tf.child_frame_id.c_str(), tf.header.frame_id.c_str());
+  }
 }
 
 //}
@@ -628,7 +628,7 @@ void OctomapEditor::publishMarkers(void) {
   visualization_msgs::MarkerArray text_markers;
   int                             marker_id = 0;
 
-  /* W //{ */
+  /* width //{ */
 
   {
     visualization_msgs::Marker text_marker;
@@ -636,17 +636,152 @@ void OctomapEditor::publishMarkers(void) {
     text_marker.header.frame_id = "map_frame";
     text_marker.type            = visualization_msgs::Marker::TEXT_VIEW_FACING;
     text_marker.color.a         = 1;
-    text_marker.scale.z         = 1.0;
-    text_marker.color.r         = 0;
+    text_marker.scale.z         = fabs(top1.x() - top2.x()) / 10;
+    text_marker.color.r         = 1;
     text_marker.color.g         = 0;
     text_marker.color.b         = 0;
 
     text_marker.id = marker_id++;
 
-    text_marker.text            = "W";
+    text_marker.text            = "width";
     text_marker.pose.position.x = (top1.x() + top2.x()) / 2.0;
     text_marker.pose.position.y = (top1.y() + top2.y()) / 2.0;
-    text_marker.pose.position.z = top1.x();
+    text_marker.pose.position.z = top1.z();
+
+    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+
+    text_markers.markers.push_back(text_marker);
+  }
+
+  //}
+
+  /* depth //{ */
+
+  {
+    visualization_msgs::Marker text_marker;
+
+    text_marker.header.frame_id = "map_frame";
+    text_marker.type            = visualization_msgs::Marker::TEXT_VIEW_FACING;
+    text_marker.color.a         = 1;
+    text_marker.scale.z         = fabs(top2.y() - top3.y()) / 10;
+    text_marker.color.r         = 1;
+    text_marker.color.g         = 0;
+    text_marker.color.b         = 0;
+
+    text_marker.id = marker_id++;
+
+    text_marker.text            = "depth";
+    text_marker.pose.position.x = (top2.x() + top3.x()) / 2.0;
+    text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
+    text_marker.pose.position.z = top2.z();
+
+    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+
+    text_markers.markers.push_back(text_marker);
+  }
+
+  //}
+
+  /* +X //{ */
+
+  {
+    visualization_msgs::Marker text_marker;
+
+    text_marker.header.frame_id = "map_frame";
+    text_marker.type            = visualization_msgs::Marker::TEXT_VIEW_FACING;
+    text_marker.color.a         = 1;
+    text_marker.scale.z         = fabs(top2.y() - top3.y()) / 10;
+    text_marker.color.r         = 1;
+    text_marker.color.g         = 0;
+    text_marker.color.b         = 0;
+
+    text_marker.id = marker_id++;
+
+    text_marker.text            = "+x";
+    text_marker.pose.position.x = params.roi_x + 1.4*(top2.x() - params.roi_x);
+    text_marker.pose.position.y = (top2.y() + top3.y())/2.0;
+    text_marker.pose.position.z = top1.z();
+
+    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+
+    text_markers.markers.push_back(text_marker);
+  }
+
+  //}
+
+  /* -X //{ */
+
+  {
+    visualization_msgs::Marker text_marker;
+
+    text_marker.header.frame_id = "map_frame";
+    text_marker.type            = visualization_msgs::Marker::TEXT_VIEW_FACING;
+    text_marker.color.a         = 1;
+    text_marker.scale.z         = fabs(top2.y() - top3.y()) / 10;
+    text_marker.color.r         = 1;
+    text_marker.color.g         = 0;
+    text_marker.color.b         = 0;
+
+    text_marker.id = marker_id++;
+
+    text_marker.text            = "-x";
+    text_marker.pose.position.x = params.roi_x + 1.4*(top1.x() - params.roi_x);
+    text_marker.pose.position.y = (top2.y() + top3.y())/2.0;
+    text_marker.pose.position.z = top1.z();
+
+    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+
+    text_markers.markers.push_back(text_marker);
+  }
+
+  //}
+
+  /* +Y //{ */
+
+  {
+    visualization_msgs::Marker text_marker;
+
+    text_marker.header.frame_id = "map_frame";
+    text_marker.type            = visualization_msgs::Marker::TEXT_VIEW_FACING;
+    text_marker.color.a         = 1;
+    text_marker.scale.z         = fabs(top1.x() - top2.x()) / 10;
+    text_marker.color.r         = 1;
+    text_marker.color.g         = 0;
+    text_marker.color.b         = 0;
+
+    text_marker.id = marker_id++;
+
+    text_marker.text            = "+y";
+    text_marker.pose.position.x = (top3.x() + top4.x())/2.0;
+    text_marker.pose.position.y = params.roi_y + 1.4*(top3.y() - params.roi_y);
+    text_marker.pose.position.z = top3.z();
+
+    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+
+    text_markers.markers.push_back(text_marker);
+  }
+
+  //}
+
+  /* -Y //{ */
+
+  {
+    visualization_msgs::Marker text_marker;
+
+    text_marker.header.frame_id = "map_frame";
+    text_marker.type            = visualization_msgs::Marker::TEXT_VIEW_FACING;
+    text_marker.color.a         = 1;
+    text_marker.scale.z         = fabs(top1.x() - top2.x()) / 10;
+    text_marker.color.r         = 1;
+    text_marker.color.g         = 0;
+    text_marker.color.b         = 0;
+
+    text_marker.id = marker_id++;
+
+    text_marker.text            = "-y";
+    text_marker.pose.position.x = (top3.x() + top4.x())/2.0;
+    text_marker.pose.position.y = params.roi_y + 1.4*(top1.y() - params.roi_y);
+    text_marker.pose.position.z = top3.z();
 
     text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
 
