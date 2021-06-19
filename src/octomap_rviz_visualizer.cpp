@@ -87,6 +87,7 @@ private:
 
   static std_msgs::ColorRGBA heightMapColor(double h);
   double                     _occupancy_cube_size_factor_;
+  double                     _free_cube_size_factor_;
 
   bool                m_useColoredMap;
   std_msgs::ColorRGBA m_color;
@@ -115,35 +116,26 @@ void OctomapRvizVisualizer::onInit() {
   param_loader.loadParam("occupied_throttled_rate", throttle_occupied_vis_);
   param_loader.loadParam("free_throttled_rate", throttle_free_vis_);
 
-  param_loader.loadParam("occupancy/min_z", m_occupancyMinZ);
-  param_loader.loadParam("occupancy/max_z", m_occupancyMaxZ);
-  param_loader.loadParam("occupancy/cube_size_factor", _occupancy_cube_size_factor_);
+  param_loader.loadParam("occupied/min_z", m_occupancyMinZ);
+  param_loader.loadParam("occupied/max_z", m_occupancyMaxZ);
+  param_loader.loadParam("occupied/cube_size_factor", _occupancy_cube_size_factor_);
 
   param_loader.loadParam("colored_map/enabled", m_useColoredMap);
 
   param_loader.loadParam("height_map/enabled", m_useHeightMap);
   param_loader.loadParam("height_map/color_factor", m_colorFactor);
 
-  double r, g, b, a;
-  param_loader.loadParam("height_map/color/r", r);
-  param_loader.loadParam("height_map/color/g", g);
-  param_loader.loadParam("height_map/color/b", b);
-  param_loader.loadParam("height_map/color/a", a);
-  m_color.r = r;
-  m_color.g = g;
-  m_color.b = b;
-  m_color.a = a;
+  param_loader.loadParam("height_map/color/r", m_color.r);
+  param_loader.loadParam("height_map/color/g", m_color.g);
+  param_loader.loadParam("height_map/color/b", m_color.b);
+  param_loader.loadParam("height_map/color/a", m_color.a);
 
-  param_loader.loadParam("publish_free_space", m_publishFreeSpace, false);
-  param_loader.loadParam("color_free/r", r);
-  param_loader.loadParam("color_free/g", g);
-  param_loader.loadParam("color_free/b", b);
-  param_loader.loadParam("color_free/a", a);
-  m_colorFree.r = r;
-  m_colorFree.g = g;
-  m_colorFree.b = b;
-  m_colorFree.a = a;
-
+  param_loader.loadParam("free_space/publish", m_publishFreeSpace);
+  param_loader.loadParam("free_space/cube_size_factor", _free_cube_size_factor_);
+  param_loader.loadParam("free_space/color/r", m_colorFree.r);
+  param_loader.loadParam("free_space/color/g", m_colorFree.g);
+  param_loader.loadParam("free_space/color/b", m_colorFree.b);
+  param_loader.loadParam("free_space/color/a", m_colorFree.a);
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[OctomapRvizVisualizer]: could not load all parameters");
@@ -351,6 +343,7 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
   }
 
   // set all the marker orietations
+  // otherwise, rviz will object with a warning
   for (int i = 0; i < tree_depth + 1; i++) {
 
     occupied_marker_array.markers[i].pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
@@ -409,9 +402,9 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
     free_marker_array.markers[i].ns              = "map";
     free_marker_array.markers[i].id              = i;
     free_marker_array.markers[i].type            = visualization_msgs::Marker::CUBE_LIST;
-    free_marker_array.markers[i].scale.x         = size * _occupancy_cube_size_factor_;
-    free_marker_array.markers[i].scale.y         = size * _occupancy_cube_size_factor_;
-    free_marker_array.markers[i].scale.z         = size * _occupancy_cube_size_factor_;
+    free_marker_array.markers[i].scale.x         = size * _free_cube_size_factor_;
+    free_marker_array.markers[i].scale.y         = size * _free_cube_size_factor_;
+    free_marker_array.markers[i].scale.z         = size * _free_cube_size_factor_;
     free_marker_array.markers[i].color           = m_colorFree;
 
     if (free_marker_array.markers[i].points.size() > 0)
