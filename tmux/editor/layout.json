@@ -1,0 +1,78 @@
+[
+	{
+		"border": "normal",
+		"floating": "auto_off",
+		"fullscreen_mode": 0,
+		"layout": "splitv",
+		"percent": 0.5,
+		"type": "con",
+		"nodes": [
+			{
+				"border": "normal",
+				"floating": "auto_off",
+				"layout": "splith",
+				"percent": 0.76,
+				"type": "con",
+				"nodes": [
+					{
+						"border": "pixel",
+						"current_border_width": 3,
+						"floating": "auto_off",
+						"geometry": {
+							"height": 846,
+							"width": 1200,
+							"x": 60,
+							"y": 60
+						},
+						"name": "octomap_editor.rviz - RViz",
+						"percent": 0.5,
+						"swallows": [
+							{
+								"instance": "^rviz$"
+							}
+						],
+						"type": "con"
+					},
+					{
+						"border": "pixel",
+						"current_border_width": 3,
+						"floating": "auto_off",
+						"geometry": {
+							"height": 685,
+							"width": 1256,
+							"x": 3209,
+							"y": 740
+						},
+						"name": "rqt_reconfigure__Param - rqt",
+						"percent": 0.5,
+						"swallows": [
+							{
+								"instance": "^rqt_reconfigure$"
+							}
+						],
+						"type": "con"
+					}
+				]
+			},
+			{
+				"border": "pixel",
+				"current_border_width": 3,
+				"floating": "auto_off",
+				"geometry": {
+					"height": 532,
+					"width": 804,
+					"x": 0,
+					"y": 0
+				},
+				"name": "urxvt",
+				"percent": 0.24,
+				"swallows": [
+					{
+						"instance": "^urxvt$"
+					}
+				],
+				"type": "con"
+			}
+		]
+	}
+]

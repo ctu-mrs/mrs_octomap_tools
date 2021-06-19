@@ -7,11 +7,10 @@
 
     <!-- other args -->
   <arg name="debug" default="false" />
-  <arg name="standalone" default="false" />
+  <arg name="standalone" default="true" />
   <arg name="custom_config" default="" />
 
-  <arg name="node_name" default="octomap_rviz_visualizer" />
-  <arg name="octomap_topic" default="octomap_server/octomap_full" />
+  <arg name="map_path" default="$(env HOME)/maps" />
 
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch" />
   <arg unless="$(arg debug)" name="launch_prefix" value="" />
@@ -24,27 +23,30 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <node pkg="nodelet" type="nodelet" name="$(arg node_name)" args="$(arg nodelet) octomap_tools/OctomapRvizVisualizer $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
+    <node pkg="nodelet" type="nodelet" name="octomap_editor" args="$(arg nodelet) octomap_tools/OctomapEditor $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
 
-      <rosparam file="$(find octomap_tools)/config/octomap_rviz_visualizer.yaml" command="load" />
+      <rosparam file="$(find octomap_tools)/config/octomap_editor.yaml" command="load" />
 
       <rosparam if="$(eval not arg('custom_config') == '')" file="$(arg custom_config)" />
 
-        <!-- topics in -->
+      <param name="map_path" type="string" value="$(arg map_path)" />
 
-      <remap from="~octomap_in" to="$(arg octomap_topic)" />
-
-        <!-- topics out -->
-
-      <remap from="~occupied_cells_vis_array_out" to="~occupied_cells_vis_array" />
-      <remap from="~occupied_cells_vis_array_throttled_out" to="~occupied_cells_vis_array_throttled" />
-      <remap from="~free_cells_vis_array_out" to="~free_cells_vis_array" />
-      <remap from="~free_cells_vis_array_throttled_out" to="~free_cells_vis_array_throttled" />
-      <remap from="~octomap_point_cloud_centers_out" to="~octomap_point_cloud_centers" />
-      <remap from="~octomap_free_centers_out" to="~octomap_free_centers" />
+      <!-- topics out -->
+      <remap from="~octomap_out" to="~octomap" />
 
     </node>
 
   </group>
+
+  <include file="$(find octomap_tools)/launch/octomap_rviz_visualizer.launch">
+
+    <arg name="standalone" value="$(arg standalone)" />
+    <arg name="nodelet_manager_name" value="$(arg nodelet_manager_name)" />
+    <arg name="custom_config" value="" />
+    <arg name="debug" value="false" />
+    <arg name="node_name" value="octomap_vis" />
+    <arg name="octomap_topic" value="octomap_editor/octomap" />
+
+  </include>
 
 </launch>

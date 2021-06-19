@@ -1,0 +1,25 @@
+name: editor
+root: ./
+startup_window: editor
+pre_window: export ROS_MASTER_URI=http://localhost:11311; export ROS_IP=127.0.0.1
+windows:
+  - editor:
+      layout: tiled
+      panes:
+        - waitForRos; roslaunch octomap_tools octomap_editor.launch
+  - reconfigure:
+      layout: tiled
+      panes:
+        - waitForRos; rosrun rqt_reconfigure rqt_reconfigure
+  - rviz:
+      layout: tiled
+      panes:
+        - waitForRos; rosrun rviz rviz -d ./octomap_editor.rviz
+  - roscore:
+      layout: tiled
+      panes:
+        - roscore
+  - layout:
+      layout: tiled
+      panes:
+        - waitForRos; sleep 2; ~/.i3/layout_manager.sh ./layout.json

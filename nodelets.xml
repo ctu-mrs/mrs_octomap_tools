@@ -3,3 +3,9 @@
     <description>OctomapRvizVisualizer nodelet</description>
   </class>
 </library>
+
+<library path="lib/libOctomapEditor">
+  <class name="octomap_tools/OctomapEditor" type="octomap_tools::octomap_rviz_visualizer::OctomapEditor" base_class_type="nodelet::Nodelet">
+    <description>OctomapEditor nodelet</description>
+  </class>
+</library>

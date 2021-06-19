@@ -1,0 +1,12 @@
+map:
+  name: "default"
+
+roi_default:
+
+  width: 10.0 # [m]
+  depth: 10.0 # [m]
+  height: 10.0 # [m]
+
+  x: 0.0 # [m]
+  y: 0.0 # [m]
+  z: 0.0 # [m]

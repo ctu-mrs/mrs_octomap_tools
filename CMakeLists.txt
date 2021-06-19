@@ -22,6 +22,11 @@ find_package(catkin REQUIRED
   mrs_lib
   visualization_msgs
   pcl_conversions
+  dynamic_reconfigure
+  )
+
+generate_dynamic_reconfigure_options(
+  cfg/octomap_editor.cfg
   )
 
 set(CMAKE_CXX_STANDARD 17)
@@ -34,16 +39,17 @@ find_package(octomap REQUIRED)
 
 catkin_package(
   CATKIN_DEPENDS roscpp nodelet std_msgs mrs_lib visualization_msgs
-  LIBRARIES OctomapRvizVisualizer
+  LIBRARIES OctomapRvizVisualizer OctomapEditor
   )
 
 include_directories(
+  ${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake
   ${catkin_INCLUDE_DIRS}
   ${octomap_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   )
 
-# pathfinder
+# OctomapRvizVisualizer
 
 add_library(OctomapRvizVisualizer
   src/octomap_rviz_visualizer.cpp
@@ -55,6 +61,23 @@ add_dependencies(OctomapRvizVisualizer
   )
 
 target_link_libraries(OctomapRvizVisualizer
+  ${catkin_LIBRARIES}
+  ${OCTOMAP_LIBRARIES}
+  ${PCL_LIBRARIES}
+  )
+
+# OctomapEditor
+
+add_library(OctomapEditor
+  src/octomap_editor.cpp
+  )
+
+add_dependencies(OctomapEditor
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+  )
+
+target_link_libraries(OctomapEditor
   ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${PCL_LIBRARIES}
