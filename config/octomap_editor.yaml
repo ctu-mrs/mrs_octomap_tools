@@ -3,10 +3,14 @@ map:
 
 roi_default:
 
-  width: 10.0 # [m]
-  depth: 10.0 # [m]
+  width: 30.0 # [m]
+  depth: 30.0 # [m]
   height: 10.0 # [m]
 
-  x: 0.0 # [m]
-  y: 0.0 # [m]
+  x: 230.0 # [m]
+  y: 230.0 # [m]
   z: 0.0 # [m]
+
+  move_step: 5.0 # [m]
+
+  resize_step: 5.0 # [m]
