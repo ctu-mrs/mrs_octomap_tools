@@ -22,4 +22,4 @@ windows:
   - layout:
       layout: tiled
       panes:
-        - waitForRos; sleep 2; ~/.i3/layout_manager.sh ./layout.json
+        - waitForRos; sleep 3; ~/.i3/layout_manager.sh ./layout.json

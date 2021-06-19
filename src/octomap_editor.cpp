@@ -78,7 +78,9 @@ private:
   void expandNodeRecursive(std::shared_ptr<octomap::OcTree>& octree, octomap::OcTreeNode* node, const unsigned int node_depth);
   bool setInsideBBX(std::shared_ptr<octomap::OcTree>& from, const octomap::point3d& p_min, const octomap::point3d& p_max, const bool state);
   bool setUnknownInsideBBX(std::shared_ptr<octomap::OcTree>& from, const octomap::point3d& p_min, const octomap::point3d& p_max);
-  bool setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool removeFreeInsideBBX(std::shared_ptr<octomap::OcTree>& from, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool setUnknownToFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max, const double height);
 
   // | -------------------- batch visualizer -------------------- |
 
@@ -125,6 +127,8 @@ void OctomapEditor::onInit() {
   param_loader.loadParam("roi_default/move_step", params_.roi_move_step);
   param_loader.loadParam("roi_default/resize_step", params_.roi_resize_step);
 
+  param_loader.loadParam("free_above_ground_height", params_.free_above_ground_height);
+
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[OctomapEditor]: could not load all parameters");
     ros::requestShutdown();
@@ -149,9 +153,12 @@ void OctomapEditor::onInit() {
   // | --------------------------- drs -------------------------- |
 
   params_.action_set_unknown           = false;
+  params_.roi_fit_to_map               = false;
   params_.action_set_free              = false;
   params_.action_set_occupied          = false;
   params_.action_set_free_above_ground = false;
+  params_.action_set_unknown_to_free   = false;
+  params_.action_remove_free           = false;
 
   params_.action_save = false;
   params_.action_load = false;
@@ -289,6 +296,38 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   //}
 
+  /* set unknown to free //{ */
+
+  if (params.action_set_unknown_to_free) {
+
+    std::scoped_lock lock(mutex_octree_);
+
+    ROS_INFO("[OctomapEditor]: setting unknown in ROI to free");
+
+    setUnknownToFreeInsideBBX(octree_, roi_min, roi_max);
+
+    params.action_set_unknown_to_free = false;
+    drs_->updateConfig(params);
+  }
+
+  //}
+
+  /* remove free //{ */
+
+  if (params.action_remove_free) {
+
+    std::scoped_lock lock(mutex_octree_);
+
+    ROS_INFO("[OctomapEditor]: remove free in ROI");
+
+    removeFreeInsideBBX(octree_, roi_min, roi_max);
+
+    params.action_remove_free = false;
+    drs_->updateConfig(params);
+  }
+
+  //}
+
   /* set free above ground //{ */
 
   if (params.action_set_free_above_ground) {
@@ -297,7 +336,7 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     ROS_INFO("[OctomapEditor]: setting ROI free above ground");
 
-    setFreeAboveGround(octree_, roi_min, roi_max);
+    setFreeAboveGround(octree_, roi_min, roi_max, params_.free_above_ground_height);
 
     params.action_set_free_above_ground = false;
     drs_->updateConfig(params);
@@ -420,6 +459,34 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
     params.roi_height -= params.roi_move_step;
 
     params.roi_move_minus_z = false;
+    drs_->updateConfig(params);
+  }
+
+  //}
+
+  /* roi fit to map //{ */
+
+  if (params.roi_fit_to_map) {
+
+    std::scoped_lock lock(mutex_octree_);
+
+    ROS_INFO("[OctomapEditor]: setting ROI to fit the map");
+
+    double min_x, min_y, min_z;
+    double max_x, max_y, max_z;
+
+    octree_->getMetricMin(min_x, min_y, min_z);
+    octree_->getMetricMax(max_x, max_y, max_z);
+
+    params.roi_x = (min_x + max_x) / 2.0;
+    params.roi_y = (min_y + max_y) / 2.0;
+    params.roi_z = (min_z + max_z) / 2.0;
+
+    params.roi_width  = fabs(min_x - max_x) / 2.0;
+    params.roi_depth  = fabs(min_y - max_y) / 2.0;
+    params.roi_height = fabs(min_z - max_z) / 2.0;
+
+    params.roi_fit_to_map = false;
     drs_->updateConfig(params);
   }
 
@@ -698,8 +765,8 @@ void OctomapEditor::publishMarkers(void) {
     text_marker.id = marker_id++;
 
     text_marker.text            = "+x";
-    text_marker.pose.position.x = params.roi_x + 1.4*(top2.x() - params.roi_x);
-    text_marker.pose.position.y = (top2.y() + top3.y())/2.0;
+    text_marker.pose.position.x = params.roi_x + 1.4 * (top2.x() - params.roi_x);
+    text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
     text_marker.pose.position.z = top1.z();
 
     text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
@@ -725,8 +792,8 @@ void OctomapEditor::publishMarkers(void) {
     text_marker.id = marker_id++;
 
     text_marker.text            = "-x";
-    text_marker.pose.position.x = params.roi_x + 1.4*(top1.x() - params.roi_x);
-    text_marker.pose.position.y = (top2.y() + top3.y())/2.0;
+    text_marker.pose.position.x = params.roi_x + 1.4 * (top1.x() - params.roi_x);
+    text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
     text_marker.pose.position.z = top1.z();
 
     text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
@@ -752,8 +819,8 @@ void OctomapEditor::publishMarkers(void) {
     text_marker.id = marker_id++;
 
     text_marker.text            = "+y";
-    text_marker.pose.position.x = (top3.x() + top4.x())/2.0;
-    text_marker.pose.position.y = params.roi_y + 1.4*(top3.y() - params.roi_y);
+    text_marker.pose.position.x = (top3.x() + top4.x()) / 2.0;
+    text_marker.pose.position.y = params.roi_y + 1.4 * (top3.y() - params.roi_y);
     text_marker.pose.position.z = top3.z();
 
     text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
@@ -779,8 +846,8 @@ void OctomapEditor::publishMarkers(void) {
     text_marker.id = marker_id++;
 
     text_marker.text            = "-y";
-    text_marker.pose.position.x = (top3.x() + top4.x())/2.0;
-    text_marker.pose.position.y = params.roi_y + 1.4*(top1.y() - params.roi_y);
+    text_marker.pose.position.x = (top3.x() + top4.x()) / 2.0;
+    text_marker.pose.position.y = params.roi_y + 1.4 * (top1.y() - params.roi_y);
     text_marker.pose.position.z = top3.z();
 
     text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
@@ -842,7 +909,8 @@ bool OctomapEditor::setInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const
 
 /* setFreeAboveGround() //{ */
 
-bool OctomapEditor::setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
+bool OctomapEditor::setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max,
+                                       const double height) {
 
   octomap::OcTreeKey min_key, max_key;
 
@@ -880,7 +948,7 @@ bool OctomapEditor::setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree,
 
       if (got_ground) {
 
-        for (int k = int((coord_max.z() - coord_min.z()) / octree->getResolution()); k > ground_z_idx; k--) {
+        for (int k = ground_z_idx + 1; k < ground_z_idx + height; k++) {
 
           double z = coord_min.z() + k * octree->getResolution();
 
@@ -899,25 +967,103 @@ bool OctomapEditor::setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree,
 
 /* setUnknownInsideBBX() //{ */
 
-bool OctomapEditor::setUnknownInsideBBX(std::shared_ptr<octomap::OcTree>& from, const octomap::point3d& p_min, const octomap::point3d& p_max) {
+bool OctomapEditor::setUnknownInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
 
-  if (!from->coordToKeyChecked(p_min, min_key) || !from->coordToKeyChecked(p_max, max_key)) {
+  if (!octree->coordToKeyChecked(p_min, min_key) || !octree->coordToKeyChecked(p_max, max_key)) {
     return false;
   }
 
-  for (octomap::OcTree::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
+  for (octomap::OcTree::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     octomap::OcTreeKey   k    = it.getKey();
-    octomap::OcTreeNode* node = from->search(k);
+    octomap::OcTreeNode* node = octree->search(k);
 
-    expandNodeRecursive(from, node, it.getDepth());
+    expandNodeRecursive(octree, node, it.getDepth());
   }
 
-  for (octomap::OcTree::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
+  for (octomap::OcTree::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
-    from->deleteNode(it.getKey());
+    octree->deleteNode(it.getKey());
+  }
+
+  return true;
+}
+
+//}
+
+/* removeFreeInsideBBX() //{ */
+
+bool OctomapEditor::removeFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
+
+  octomap::OcTreeKey min_key, max_key;
+
+  if (!octree->coordToKeyChecked(p_min, min_key) || !octree->coordToKeyChecked(p_max, max_key)) {
+    return false;
+  }
+
+  for (octomap::OcTree::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+
+    octomap::OcTreeKey   k    = it.getKey();
+    octomap::OcTreeNode* node = octree->search(k);
+
+    expandNodeRecursive(octree, node, it.getDepth());
+  }
+
+  for (octomap::OcTree::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+
+    auto key  = it.getKey();
+    auto node = octree->search(key);
+
+    if (node && !octree->isNodeOccupied(node)) {
+      octree->deleteNode(key);
+    }
+  }
+
+  return true;
+}
+
+//}
+
+/* setUnknownToFreeInsideBBX() //{ */
+
+bool OctomapEditor::setUnknownToFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
+
+  octomap::OcTreeKey min_key, max_key;
+
+  if (!octree->coordToKeyChecked(p_min, min_key) || !octree->coordToKeyChecked(p_max, max_key)) {
+    return false;
+  }
+
+  auto coord_min = octree->keyToCoord(min_key);
+  auto coord_max = octree->keyToCoord(max_key);
+
+  for (int i = 0; i < int((coord_max.x() - coord_min.x()) / octree->getResolution()); i++) {
+
+    double x = coord_min.x() + i * octree->getResolution();
+
+    for (int j = 0; j < int((coord_max.y() - coord_min.y()) / octree->getResolution()); j++) {
+
+      double y = coord_min.y() + j * octree->getResolution();
+
+      for (int k = 0; k < int((coord_max.z() - coord_min.z()) / octree->getResolution()); k++) {
+
+        double z = coord_min.z() + k * octree->getResolution();
+
+        octomap::OcTreeKey key = octree->coordToKey(x, y, z);
+
+        octomap::point3d point(x, y, z);
+
+        octomap::OcTreeNode node;
+
+        bool is = octree->coordToKeyChecked(point, key);
+
+        if (!is) {
+          octree->setNodeValue(key, -1.0);
+        }
+      }
+    }
   }
 
   return true;

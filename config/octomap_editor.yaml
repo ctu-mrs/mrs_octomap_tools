@@ -14,3 +14,5 @@ roi_default:
   move_step: 5.0 # [m]
 
   resize_step: 5.0 # [m]
+
+free_above_ground_height: 20.0 # [m]
