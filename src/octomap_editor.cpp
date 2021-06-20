@@ -1052,14 +1052,9 @@ bool OctomapEditor::setUnknownToFreeInsideBBX(std::shared_ptr<octomap::OcTree>& 
         double z = coord_min.z() + k * octree->getResolution();
 
         octomap::OcTreeKey key = octree->coordToKey(x, y, z);
+        auto node = octree->search(key);
 
-        octomap::point3d point(x, y, z);
-
-        octomap::OcTreeNode node;
-
-        bool is = octree->coordToKeyChecked(point, key);
-
-        if (!is) {
+        if (!node) {
           octree->setNodeValue(key, -1.0);
         }
       }
