@@ -3,6 +3,7 @@
 #include "octomap/OcTreeNode.h"
 #include "octomap/Pointcloud.h"
 #include "octomap/octomap_types.h"
+#include <memory>
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
 
@@ -32,6 +33,16 @@ namespace octomap_tools
 
 namespace octomap_rviz_visualizer
 {
+
+/* defines //{ */
+
+#ifdef COLOR_OCTOMAP_SERVER
+using OcTree_t = octomap::ColorOcTree;
+#else
+using OcTree_t = octomap::OcTree;
+#endif
+
+//}
 
 /* class OctomapEditor //{ */
 
@@ -64,9 +75,9 @@ private:
 
   // | ------------------------- octomap ------------------------ |
 
-  std::shared_ptr<octomap::OcTree> octree_;
-  std::mutex                       mutex_octree_;
-  double                           octree_resolution_;
+  std::shared_ptr<OcTree_t> octree_;
+  std::mutex                mutex_octree_;
+  double                    octree_resolution_;
 
   // | ------------------------ routines ------------------------ |
 
@@ -74,13 +85,23 @@ private:
   bool saveToFile(const std::string& filename);
   void publishMap(void);
   void publishMarkers(void);
+  void publishTf(void);
 
-  void expandNodeRecursive(std::shared_ptr<octomap::OcTree>& octree, octomap::OcTreeNode* node, const unsigned int node_depth);
-  bool setInsideBBX(std::shared_ptr<octomap::OcTree>& from, const octomap::point3d& p_min, const octomap::point3d& p_max, const bool state);
-  bool setUnknownInsideBBX(std::shared_ptr<octomap::OcTree>& from, const octomap::point3d& p_min, const octomap::point3d& p_max);
-  bool removeFreeInsideBBX(std::shared_ptr<octomap::OcTree>& from, const octomap::point3d& p_min, const octomap::point3d& p_max);
-  bool setUnknownToFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max);
-  bool setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max, const double height);
+  void undo(void);
+  void saveToUndoList(void);
+
+  void expandNodeRecursive(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const unsigned int node_depth);
+  bool setInsideBBX(std::shared_ptr<OcTree_t>& from, const octomap::point3d& p_min, const octomap::point3d& p_max, const bool state);
+  bool setUnknownInsideBBX(std::shared_ptr<OcTree_t>& from, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool removeFreeInsideBBX(std::shared_ptr<OcTree_t>& from, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool setUnknownToFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool setFreeAboveGround(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max, const double height);
+  bool clearOutsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution);
+
+  // | ------------------------ undo list ----------------------- |
+
+  std::vector<std::shared_ptr<OcTree_t>> undoo_list_;
 
   // | -------------------- batch visualizer -------------------- |
 
@@ -150,18 +171,33 @@ void OctomapEditor::onInit() {
 
   tf_broadcaster_ = mrs_lib::TransformBroadcaster();
 
+  // | ---------------------- load the map ---------------------- |
+
+  if (loadFromFile(params_.map_name)) {
+    ROS_INFO("[OctomapEditor]: map loaded");
+    params_.resolution = octree_->getResolution();
+  } else {
+    ROS_ERROR("[OctomapEditor]: could not load the map");
+    params_.resolution = 0;
+  }
+
   // | --------------------------- drs -------------------------- |
 
   params_.action_set_unknown           = false;
+  params_.action_clear_outside         = false;
   params_.roi_fit_to_map               = false;
   params_.action_set_free              = false;
   params_.action_set_occupied          = false;
   params_.action_set_free_above_ground = false;
   params_.action_set_unknown_to_free   = false;
   params_.action_remove_free           = false;
+  params_.undo                         = false;
 
   params_.action_save = false;
   params_.action_load = false;
+
+  params_.prune  = false;
+  params_.expand = false;
 
   params_.roi_resize_plus_x  = false;
   params_.roi_resize_minus_x = false;
@@ -186,14 +222,6 @@ void OctomapEditor::onInit() {
   Drs_t::CallbackType f = boost::bind(&OctomapEditor::callbackDrs, this, _1, _2);
   drs_->setCallback(f);
 
-  // | ---------------------- load the map ---------------------- |
-
-  if (loadFromFile(params_.map_name)) {
-    ROS_INFO("[OctomapEditor]: map loaded");
-  } else {
-    ROS_ERROR("[OctomapEditor]: could not load the map");
-  }
-
   // | ------------------------- timers ------------------------- |
 
   timer_main_ = nh_.createTimer(ros::Rate(1.0), &OctomapEditor::timerMain, this);
@@ -217,7 +245,7 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
     return;
   }
 
-  ROS_INFO("[OctomapEditor]: drs action");
+  ROS_INFO("[OctomapEditor]: drs action started");
 
   {
     std::scoped_lock lock(mutex_params_);
@@ -235,6 +263,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
   /* load //{ */
 
   if (params.action_load) {
+
+    saveToUndoList();
 
     if (loadFromFile(params.map_name)) {
       ROS_INFO("[OctomapEditor]: map loaded");
@@ -268,11 +298,15 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   if (params.action_set_unknown) {
 
-    std::scoped_lock lock(mutex_octree_);
-
     ROS_INFO("[OctomapEditor]: setting ROI unknown");
 
-    setUnknownInsideBBX(octree_, roi_min, roi_max);
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      setUnknownInsideBBX(octree_, roi_min, roi_max);
+    }
 
     params.action_set_unknown = false;
     drs_->updateConfig(params);
@@ -284,11 +318,15 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   if (params.action_set_free) {
 
-    std::scoped_lock lock(mutex_octree_);
-
     ROS_INFO("[OctomapEditor]: setting ROI free");
 
-    setInsideBBX(octree_, roi_min, roi_max, false);
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      setInsideBBX(octree_, roi_min, roi_max, false);
+    }
 
     params.action_set_free = false;
     drs_->updateConfig(params);
@@ -300,11 +338,15 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   if (params.action_set_unknown_to_free) {
 
-    std::scoped_lock lock(mutex_octree_);
-
     ROS_INFO("[OctomapEditor]: setting unknown in ROI to free");
 
-    setUnknownToFreeInsideBBX(octree_, roi_min, roi_max);
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      setUnknownToFreeInsideBBX(octree_, roi_min, roi_max);
+    }
 
     params.action_set_unknown_to_free = false;
     drs_->updateConfig(params);
@@ -316,11 +358,15 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   if (params.action_remove_free) {
 
-    std::scoped_lock lock(mutex_octree_);
-
     ROS_INFO("[OctomapEditor]: remove free in ROI");
 
-    removeFreeInsideBBX(octree_, roi_min, roi_max);
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      removeFreeInsideBBX(octree_, roi_min, roi_max);
+    }
 
     params.action_remove_free = false;
     drs_->updateConfig(params);
@@ -332,11 +378,15 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   if (params.action_set_free_above_ground) {
 
-    std::scoped_lock lock(mutex_octree_);
-
     ROS_INFO("[OctomapEditor]: setting ROI free above ground");
 
-    setFreeAboveGround(octree_, roi_min, roi_max, params_.free_above_ground_height);
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      setFreeAboveGround(octree_, roi_min, roi_max, params_.free_above_ground_height);
+    }
 
     params.action_set_free_above_ground = false;
     drs_->updateConfig(params);
@@ -348,13 +398,92 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   if (params.action_set_occupied) {
 
-    std::scoped_lock lock(mutex_octree_);
-
     ROS_INFO("[OctomapEditor]: setting ROI occupied");
 
-    setInsideBBX(octree_, roi_min, roi_max, true);
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      setInsideBBX(octree_, roi_min, roi_max, true);
+    }
 
     params.action_set_occupied = false;
+    drs_->updateConfig(params);
+  }
+
+  //}
+
+  /* clear outside //{ */
+
+  if (params.action_clear_outside) {
+
+    ROS_INFO("[OctomapEditor]: clearing outside ROI");
+
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      clearOutsideBBX(octree_, roi_min, roi_max);
+    }
+
+    params.action_clear_outside = false;
+    drs_->updateConfig(params);
+  }
+
+  //}
+
+  /* prune //{ */
+
+  if (params.prune) {
+
+    ROS_INFO("[OctomapEditor]: pruning");
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      octree_->prune();
+    }
+
+    params.prune = false;
+    drs_->updateConfig(params);
+  }
+
+  //}
+
+  /* expand //{ */
+
+  if (params.expand) {
+
+    ROS_INFO("[OctomapEditor]: pruning");
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      octree_->expand();
+    }
+
+    params.expand = false;
+    drs_->updateConfig(params);
+  }
+
+  //}
+
+  /* resolution //{ */
+
+  if (fabs(octree_->getResolution() - params.resolution) > 1e-3) {
+
+    ROS_INFO("[OctomapEditor]: changing resolution");
+
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      setResolution(octree_, params.resolution);
+    }
+
     drs_->updateConfig(params);
   }
 
@@ -492,13 +621,27 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   //}
 
+  /* undo //{ */
+
+  if (params.undo) {
+
+    undo();
+
+    params.resolution = octree_->getResolution();
+
+    params.undo = false;
+    drs_->updateConfig(params);
+  }
+
+  //}
+
   {
     std::scoped_lock lock(mutex_params_);
 
     params_ = params;
   }
 
-  publishMarkers();
+  ROS_INFO("[OctomapEditor]: drs action finished");
 }
 
 //}
@@ -519,23 +662,7 @@ void OctomapEditor::timerMain([[maybe_unused]] const ros::TimerEvent& evt) {
 
   publishMarkers();
 
-  // | ------------------- publish the roi TF ------------------- |
-
-  geometry_msgs::TransformStamped tf;
-  tf.header.stamp            = ros::Time::now();
-  tf.header.frame_id         = "map_frame";
-  tf.child_frame_id          = "roi_frame";
-  tf.transform.translation.x = params_.roi_x;
-  tf.transform.translation.y = params_.roi_y;
-  tf.transform.translation.z = params_.roi_z;
-  tf.transform.rotation      = mrs_lib::AttitudeConverter(0, 0, 0);
-
-  try {
-    tf_broadcaster_.sendTransform(tf);
-  }
-  catch (...) {
-    ROS_ERROR("[Odometry]: Exception caught during publishing TF: %s - %s.", tf.child_frame_id.c_str(), tf.header.frame_id.c_str());
-  }
+  publishTf();
 }
 
 //}
@@ -567,8 +694,8 @@ bool OctomapEditor::loadFromFile(const std::string& filename) {
         return false;
       }
 
-      octomap::OcTree* OcTree = dynamic_cast<octomap::OcTree*>(tree);
-      octree_                 = std::shared_ptr<octomap::OcTree>(OcTree);
+      OcTree_t* OcTree = dynamic_cast<OcTree_t*>(tree);
+      octree_          = std::shared_ptr<OcTree_t>(OcTree);
 
       if (!octree_) {
         ROS_ERROR("[OctomapEditor]: could not read OcTree file");
@@ -864,11 +991,73 @@ void OctomapEditor::publishMarkers(void) {
 
 //}
 
+/* publishTf() //{ */
+
+void OctomapEditor::publishTf(void) {
+
+  auto params = mrs_lib::get_mutexed(mutex_params_, params_);
+
+  // | ------------------- publish the roi TF ------------------- |
+
+  geometry_msgs::TransformStamped tf;
+  tf.header.stamp            = ros::Time::now();
+  tf.header.frame_id         = "map_frame";
+  tf.child_frame_id          = "roi_frame";
+  tf.transform.translation.x = params.roi_x;
+  tf.transform.translation.y = params.roi_y;
+  tf.transform.translation.z = params.roi_z;
+  tf.transform.rotation      = mrs_lib::AttitudeConverter(0, 0, 0);
+
+  try {
+    tf_broadcaster_.sendTransform(tf);
+  }
+  catch (...) {
+    ROS_ERROR("[Odometry]: Exception caught during publishing TF: %s - %s.", tf.child_frame_id.c_str(), tf.header.frame_id.c_str());
+  }
+}
+
+//}
+
+/* undo() //{ */
+
+void OctomapEditor::undo(void) {
+
+  if (undoo_list_.size() > 0) {
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      octree_ = undoo_list_.back();
+      undoo_list_.pop_back();
+    }
+
+    ROS_INFO("[OctomapEditor]: undone last change");
+
+  } else {
+    ROS_WARN("[OctomapEditor]: already at the last change");
+  }
+}
+
+//}
+
+/* saveToUndoList() //{ */
+
+void OctomapEditor::saveToUndoList(void) {
+
+  std::scoped_lock lock(mutex_octree_);
+
+  std::shared_ptr<OcTree_t> octree_tmp = std::make_shared<OcTree_t>(*octree_);
+
+  undoo_list_.push_back(octree_tmp);
+}
+
+//}
+
 // | ---------------------- map functions --------------------- |
 
 /* setInsideBBX() //{ */
 
-bool OctomapEditor::setInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max, const bool state) {
+bool OctomapEditor::setInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max, const bool state) {
 
   octomap::OcTreeKey min_key, max_key;
 
@@ -909,8 +1098,7 @@ bool OctomapEditor::setInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const
 
 /* setFreeAboveGround() //{ */
 
-bool OctomapEditor::setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max,
-                                       const double height) {
+bool OctomapEditor::setFreeAboveGround(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max, const double height) {
 
   octomap::OcTreeKey min_key, max_key;
 
@@ -967,7 +1155,7 @@ bool OctomapEditor::setFreeAboveGround(std::shared_ptr<octomap::OcTree>& octree,
 
 /* setUnknownInsideBBX() //{ */
 
-bool OctomapEditor::setUnknownInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
+bool OctomapEditor::setUnknownInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
 
@@ -975,7 +1163,7 @@ bool OctomapEditor::setUnknownInsideBBX(std::shared_ptr<octomap::OcTree>& octree
     return false;
   }
 
-  for (octomap::OcTree::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     octomap::OcTreeKey   k    = it.getKey();
     octomap::OcTreeNode* node = octree->search(k);
@@ -983,7 +1171,7 @@ bool OctomapEditor::setUnknownInsideBBX(std::shared_ptr<octomap::OcTree>& octree
     expandNodeRecursive(octree, node, it.getDepth());
   }
 
-  for (octomap::OcTree::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     octree->deleteNode(it.getKey());
   }
@@ -995,7 +1183,7 @@ bool OctomapEditor::setUnknownInsideBBX(std::shared_ptr<octomap::OcTree>& octree
 
 /* removeFreeInsideBBX() //{ */
 
-bool OctomapEditor::removeFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
+bool OctomapEditor::removeFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
 
@@ -1003,7 +1191,7 @@ bool OctomapEditor::removeFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree
     return false;
   }
 
-  for (octomap::OcTree::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     octomap::OcTreeKey   k    = it.getKey();
     octomap::OcTreeNode* node = octree->search(k);
@@ -1011,7 +1199,7 @@ bool OctomapEditor::removeFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree
     expandNodeRecursive(octree, node, it.getDepth());
   }
 
-  for (octomap::OcTree::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     auto key  = it.getKey();
     auto node = octree->search(key);
@@ -1028,7 +1216,7 @@ bool OctomapEditor::removeFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree
 
 /* setUnknownToFreeInsideBBX() //{ */
 
-bool OctomapEditor::setUnknownToFreeInsideBBX(std::shared_ptr<octomap::OcTree>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
+bool OctomapEditor::setUnknownToFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
 
@@ -1051,8 +1239,8 @@ bool OctomapEditor::setUnknownToFreeInsideBBX(std::shared_ptr<octomap::OcTree>& 
 
         double z = coord_min.z() + k * octree->getResolution();
 
-        octomap::OcTreeKey key = octree->coordToKey(x, y, z);
-        auto node = octree->search(key);
+        octomap::OcTreeKey key  = octree->coordToKey(x, y, z);
+        auto               node = octree->search(key);
 
         if (!node) {
           octree->setNodeValue(key, -1.0);
@@ -1068,7 +1256,7 @@ bool OctomapEditor::setUnknownToFreeInsideBBX(std::shared_ptr<octomap::OcTree>& 
 
 /* expandNodeRecursive() //{ */
 
-void OctomapEditor::expandNodeRecursive(std::shared_ptr<octomap::OcTree>& octree, octomap::OcTreeNode* node, const unsigned int node_depth) {
+void OctomapEditor::expandNodeRecursive(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const unsigned int node_depth) {
 
   if (node_depth < octree->getTreeDepth()) {
 
@@ -1083,6 +1271,146 @@ void OctomapEditor::expandNodeRecursive(std::shared_ptr<octomap::OcTree>& octree
   } else {
     return;
   }
+}
+
+//}
+
+/* clearOutsideBBX() //{ */
+
+bool OctomapEditor::clearOutsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
+
+  octomap::OcTreeKey minKey, maxKey;
+
+  if (!octree->coordToKeyChecked(p_min, minKey) || !octree->coordToKeyChecked(p_max, maxKey)) {
+    return false;
+  }
+
+  octree->expand();
+
+  std::vector<std::pair<octomap::OcTreeKey, unsigned int>> keys;
+
+  for (OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
+
+    // check if outside of bbx:
+    octomap::OcTreeKey k = it.getKey();
+
+    if (k[0] < minKey[0] || k[1] < minKey[1] || k[2] < minKey[2] || k[0] > maxKey[0] || k[1] > maxKey[1] || k[2] > maxKey[2]) {
+      keys.push_back(std::make_pair(k, it.getDepth()));
+    }
+  }
+
+  for (auto k : keys) {
+    octree->deleteNode(k.first, k.second);
+  }
+
+  octree->prune();
+
+  return true;
+}
+
+//}
+
+/* setResolution() //{ */
+
+bool OctomapEditor::setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution) {
+
+  octree->expand();
+
+  double min_x, min_y, min_z;
+  double max_x, max_y, max_z;
+
+  octree_->getMetricMin(min_x, min_y, min_z);
+  octree_->getMetricMax(max_x, max_y, max_z);
+
+  std::shared_ptr<OcTree_t> octree_new = std::make_shared<OcTree_t>(resolution);
+
+  octomap::OcTreeKey min_key = octree_new->coordToKey(min_x, min_y, min_z);
+  octomap::OcTreeKey max_key = octree_new->coordToKey(max_x, max_y, max_z);
+
+  auto coord_min = octree_new->keyToCoord(min_key);
+  auto coord_max = octree_new->keyToCoord(max_key);
+
+  // changing to finer resolution
+  if (resolution <= octree->getResolution()) {
+    ROS_INFO("[OctomapEditor]: changing resolution to a finer one, this may take a while");
+  }
+
+  int x_steps = int((coord_max.x() - coord_min.x()) / resolution);
+  int y_steps = int((coord_max.y() - coord_min.y()) / resolution);
+  int z_steps = int((coord_max.z() - coord_min.z()) / resolution);
+
+  // just for counting
+  long points_total = x_steps * y_steps * z_steps;
+  long point        = 0;
+
+  for (int i = 0; i < x_steps; i++) {
+
+    double x = coord_min.x() + i * resolution;
+
+    for (int j = 0; j < y_steps; j++) {
+
+      double y = coord_min.y() + j * resolution;
+
+      for (int k = 0; k < z_steps; k++) {
+
+        double z = coord_min.z() + k * resolution;
+
+        point++;
+
+        ROS_INFO_THROTTLE(0.1, "[OctomapEditor]: progress: %.2f%%", 100.0 * (double(point) / double(points_total)));
+
+        // changing to finer resolution
+        if (resolution <= octree->getResolution()) {
+
+          octomap::OcTreeKey   key_old  = octree->coordToKey(x, y, z);
+          octomap::OcTreeNode* node_old = octree->search(key_old);
+
+          if (node_old) {
+            octomap::OcTreeKey key_new = octree_new->coordToKey(x, y, z);
+
+            octree_new->setNodeValue(key_new, node_old->getValue());
+          }
+
+          // changing to coarser resolution
+        } else {
+
+          octomap::point3d p_min(float(x - resolution / 2.0), float(y - resolution / 2.0), float(z - resolution / 2.0));
+          octomap::point3d p_max(float(x + resolution / 2.0), float(y + resolution / 2.0), float(z + resolution / 2.0));
+
+          float avg_value = 0;
+          int   n_nodes   = 0;
+
+          for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+
+            octomap::OcTreeKey   k    = it.getKey();
+            octomap::OcTreeNode* node = octree->search(k);
+
+            if (node) {
+              avg_value += (octree->isNodeOccupied(node)) ? 1.0 : -1.0;
+              n_nodes++;
+            }
+          }
+
+          if (n_nodes > 0) {
+
+            avg_value /= float(n_nodes);
+
+            octomap::OcTreeKey key_new = octree_new->coordToKey(x, y, z);
+
+            octree_new->setNodeValue(key_new, avg_value);
+          }
+        }
+      }
+    }
+  }
+
+  octree_new->prune();
+
+  octree_ = octree_new;
+
+  ROS_INFO("[OctomapEditor]: resolution change finished");
+
+  return true;
 }
 
 //}
