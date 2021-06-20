@@ -13,9 +13,9 @@ The editor provides adjustable bounding box to specify the region for operations
 
 
 Supported operations:
-  * setting/unsetting free/occupied/unknown space within the bounding box and outside of a bounding box
+  * setting/unsetting free/occupied/unknown space within the bounding box or outside of the bounding box
   * changing of resolution of the octomap
   * creating free space above the ground level
   * expanding and pruning the tree and the bounding box region (mainly for testing)
 
-![](./.fig/octomap_editor.jpg)
+![image](./.fig/octomap_editor.jpg)
