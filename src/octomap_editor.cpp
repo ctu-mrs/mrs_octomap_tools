@@ -79,6 +79,7 @@ private:
   std::shared_ptr<OcTree_t> octree_;
   std::mutex                mutex_octree_;
   double                    octree_resolution_;
+  std::atomic<bool>         map_updated_ = true;
 
   // | ------------------------ routines ------------------------ |
 
@@ -281,6 +282,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_load = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -317,6 +320,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_set_unknown = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -337,6 +342,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_set_free = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -357,6 +364,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_set_unknown_to_free = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -377,6 +386,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_remove_free = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -397,6 +408,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_set_free_above_ground = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -417,6 +430,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_set_occupied = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -437,6 +452,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_clear_outside = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -455,6 +472,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.prune_in_roi = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -473,6 +492,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.expand_in_roi = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -493,6 +514,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.prune = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -513,6 +536,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.expand = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -532,6 +557,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
     }
 
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -678,6 +705,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.undo = false;
     drs_->updateConfig(params);
+
+    map_updated_ = true;
   }
 
   //}
@@ -705,7 +734,10 @@ void OctomapEditor::timerMain([[maybe_unused]] const ros::TimerEvent& evt) {
 
   ROS_INFO_ONCE("[OctomapEditor]: main timer spinning");
 
-  publishMap();
+  if (map_updated_) {
+    publishMap();
+    map_updated_ = false;
+  }
 
   publishMarkers();
 
