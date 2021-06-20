@@ -1,13 +1,13 @@
 <launch>
 
-  <arg name="UAV_NAME" default="$(env UAV_NAME)" />
+  <arg name="UAV_NAME" default="octomap" />
   <arg name="LOGGER_DEBUG" default="$(optenv LOGGER_DEBUG false)" />
 
   <env name="ROSCONSOLE_CONFIG_FILE" if="$(eval arg('LOGGER_DEBUG'))" value="$(find octomap_tools)/config/debug_verbosity.yaml" />
 
     <!-- other args -->
   <arg name="debug" default="false" />
-  <arg name="standalone" default="true" />
+  <arg name="standalone" default="false" />
   <arg name="custom_config" default="" />
 
   <arg name="map_path" default="$(env HOME)/maps" />
@@ -15,13 +15,17 @@
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch" />
   <arg unless="$(arg debug)" name="launch_prefix" value="" />
 
-  <arg name="nodelet_manager_name" default="" />
+  <arg name="nodelet_manager_name" default="octomap_editor_nodelet_manager" />
   <arg     if="$(eval arg('standalone') or arg('debug'))" name="nodelet" value="standalone" />
   <arg unless="$(eval arg('standalone') or arg('debug'))" name="nodelet" value="load" />
   <arg     if="$(eval arg('standalone') or arg('debug'))" name="nodelet_manager" value="" />
   <arg unless="$(eval arg('standalone') or arg('debug'))" name="nodelet_manager" value="$(arg nodelet_manager_name)" />
 
   <group ns="$(arg UAV_NAME)">
+
+    <node pkg="nodelet" type="nodelet" name="$(arg nodelet_manager_name)" args="manager" output="screen" launch-prefix="$(arg launch_prefix)" respawn="true">
+      <param name="num_worker_threads" value="4" />
+    </node>
 
     <node pkg="nodelet" type="nodelet" name="octomap_editor" args="$(arg nodelet) octomap_tools/OctomapEditor $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
 
@@ -40,6 +44,7 @@
 
   <include file="$(find octomap_tools)/launch/octomap_rviz_visualizer.launch">
 
+    <arg name="UAV_NAME" value="$(arg UAV_NAME)" />
     <arg name="standalone" value="$(arg standalone)" />
     <arg name="nodelet_manager_name" value="$(arg nodelet_manager_name)" />
     <arg name="custom_config" value="" />
