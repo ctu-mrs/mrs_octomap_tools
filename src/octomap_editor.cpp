@@ -1243,6 +1243,11 @@ bool OctomapEditor::pruneInBBX(std::shared_ptr<OcTree_t>& octree, const octomap:
 
   std::shared_ptr<OcTree_t> octree_new = std::make_shared<OcTree_t>(octree_->getResolution());
 
+  octree_new->setProbHit(octree->getProbHit());
+  octree_new->setProbMiss(octree->getProbMiss());
+  octree_new->setClampingThresMin(octree->getClampingThresMinLog());
+  octree_new->setClampingThresMax(octree->getClampingThresMaxLog());
+
   copyInsideBBX(octree_, octree_new, p_min, p_max);
 
   octree_new->prune();
@@ -1444,6 +1449,11 @@ bool OctomapEditor::setResolution(std::shared_ptr<OcTree_t>& octree, const doubl
   octree_->getMetricMax(max_x, max_y, max_z);
 
   std::shared_ptr<OcTree_t> octree_new = std::make_shared<OcTree_t>(resolution);
+
+  octree_new->setProbHit(octree->getProbHit());
+  octree_new->setProbMiss(octree->getProbMiss());
+  octree_new->setClampingThresMin(octree->getClampingThresMinLog());
+  octree_new->setClampingThresMax(octree->getClampingThresMaxLog());
 
   octomap::OcTreeKey min_key = octree_new->coordToKey(min_x, min_y, min_z);
   octomap::OcTreeKey max_key = octree_new->coordToKey(max_x, max_y, max_z);
