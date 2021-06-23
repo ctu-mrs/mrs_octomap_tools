@@ -139,14 +139,14 @@ void OctomapRvizVisualizer::onInit() {
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[OctomapRvizVisualizer]: could not load all parameters");
-    ros::requestShutdown();
+    ros::shutdown();
   }
 
   // | ----------------------- publishers ----------------------- |
 
   // throttled
-  pub_throttled_free_marker_     = nh_.advertise<visualization_msgs::MarkerArray>("occupied_cells_vis_array_throttled_out", 1);
-  pub_throttled_occupied_marker_ = nh_.advertise<visualization_msgs::MarkerArray>("free_cells_vis_array_throttled_out", 1);
+  pub_throttled_occupied_marker_ = nh_.advertise<visualization_msgs::MarkerArray>("occupied_cells_vis_array_throttled_out", 1);
+  pub_throttled_free_marker_     = nh_.advertise<visualization_msgs::MarkerArray>("free_cells_vis_array_throttled_out", 1);
 
   pub_occupied_pc_ = nh_.advertise<sensor_msgs::PointCloud2>("octomap_point_cloud_centers_out", 1);
   pub_free_pc_     = nh_.advertise<sensor_msgs::PointCloud2>("octomap_free_centers_out", 1);
@@ -209,6 +209,19 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
   ROS_INFO_ONCE("[OctomapRvizVisualizer]: getting octomap");
 
+  bool occupied_subscribed          = pub_occupied_marker_.getNumSubscribers() > 0;
+  bool throttled_occupied_subscibed = pub_throttled_occupied_marker_.getNumSubscribers() > 0;
+  bool free_subscribed              = pub_free_marker_.getNumSubscribers() > 0;
+  bool throttled_free_subscibed     = pub_throttled_free_marker_.getNumSubscribers() > 0;
+  bool pc_occupied_subscribed       = pub_occupied_pc_.getNumSubscribers() > 0;
+  bool pc_free_subscribed           = pub_free_pc_.getNumSubscribers() > 0;
+
+  if (!occupied_subscribed && !throttled_occupied_subscibed && !free_subscribed && !throttled_free_subscibed && !pc_occupied_subscribed &&
+      !pc_free_subscribed) {
+    ROS_INFO_THROTTLE(1.0, "[OctomapRvizVisualizer]: nobody subscribed to our messages, not processing octomap");
+    return;
+  }
+
   octomap_msgs::OctomapConstPtr octomap = wrp.getMsg();
 
   octomap::AbstractOcTree* tree_ptr = octomap_msgs::fullMsgToMap(*octomap);
@@ -236,80 +249,90 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
   occupied_marker_array.markers.resize(tree_depth + 1);
 
   // init pointcloud:
-  pcl::PointCloud<PCLPoint> occupied_pclCloud;
-  pcl::PointCloud<PCLPoint> free_pclCloud;
+  pcl::PointCloud<PCLPoint> occupied_pcl_cloud;
+  pcl::PointCloud<PCLPoint> free_pcl_cloud;
 
   // now, traverse all leafs in the tree:
   for (auto it = octree->begin(tree_depth), end = octree->end(); it != end; ++it) {
 
     if (octree->isNodeOccupied(*it)) {
 
-      auto pes = it;
+      if (!(occupied_subscribed || throttled_occupied_subscibed || pc_occupied_subscribed)) {
+        continue;
+      }
 
-      double z2 = pes.getZ();
-
+      double z2        = it.getZ();
       double z         = it.getZ();
       double half_size = it.getSize() / 2.0;
 
-      if (z + half_size > m_occupancyMinZ && z - half_size < m_occupancyMaxZ) {
+      if (occupied_subscribed || throttled_occupied_subscibed || pc_occupied_subscribed) {
 
-        double x = it.getX();
-        double y = it.getY();
+        if (z + half_size > m_occupancyMinZ && z - half_size < m_occupancyMaxZ) {
+
+          double x = it.getX();
+          double y = it.getY();
 
 #ifdef COLOR_OCTOMAP_SERVER
-        int r = it->getColor().r;
-        int g = it->getColor().g;
-        int b = it->getColor().b;
+          int r = it->getColor().r;
+          int g = it->getColor().g;
+          int b = it->getColor().b;
 #endif
 
-        unsigned idx = it.getDepth();
-        assert(idx < occupied_marker_array.markers.size());
+          unsigned idx = it.getDepth();
+          assert(idx < occupied_marker_array.markers.size());
 
-        geometry_msgs::Point cubeCenter;
-        cubeCenter.x = x;
-        cubeCenter.y = y;
-        cubeCenter.z = z;
+          geometry_msgs::Point cubeCenter;
+          cubeCenter.x = x;
+          cubeCenter.y = y;
+          cubeCenter.z = z;
 
-        occupied_marker_array.markers[idx].points.push_back(cubeCenter);
+          occupied_marker_array.markers[idx].points.push_back(cubeCenter);
 
-        if (m_useHeightMap) {
+          if (m_useHeightMap) {
 
-          double minX, minY, minZ, maxX, maxY, maxZ;
-          octree->getMetricMin(minX, minY, minZ);
-          octree->getMetricMax(maxX, maxY, maxZ);
+            double minX, minY, minZ, maxX, maxY, maxZ;
+            octree->getMetricMin(minX, minY, minZ);
+            octree->getMetricMax(maxX, maxY, maxZ);
 
-          double h = (1.0 - std::min(std::max((cubeCenter.z - minZ) / (maxZ - minZ), 0.0), 1.0)) * m_colorFactor;
-          occupied_marker_array.markers[idx].colors.push_back(heightMapColor(h));
-        }
+            double h = (1.0 - std::min(std::max((cubeCenter.z - minZ) / (maxZ - minZ), 0.0), 1.0)) * m_colorFactor;
+            occupied_marker_array.markers[idx].colors.push_back(heightMapColor(h));
+          }
 
 #ifdef COLOR_OCTOMAP_SERVER
-        if (m_useColoredMap) {
-          // TODO
-          // potentially use occupancy as measure for alpha channel?
-          std_msgs::msg::ColorRGBA _color;
-          _color.r = (r / 255.);
-          _color.g = (g / 255.);
-          _color.b = (b / 255.);
-          _color.a = 1.0;
-          occupied_marker_array.markers[idx].colors.push_back(_color);
-        }
+          if (m_useColoredMap) {
+            // TODO
+            // potentially use occupancy as measure for alpha channel?
+            std_msgs::msg::ColorRGBA _color;
+            _color.r = (r / 255.);
+            _color.g = (g / 255.);
+            _color.b = (b / 255.);
+            _color.a = 1.0;
+            occupied_marker_array.markers[idx].colors.push_back(_color);
+          }
 #endif
 
+          if (pc_occupied_subscribed) {
 #ifdef COLOR_OCTOMAP_SERVER
-        PCLPoint _point = PCLPoint();
-        _point.x        = x;
-        _point.y        = y;
-        _point.z        = z;
-        _point.r        = r;
-        _point.g        = g;
-        _point.b        = b;
-        occupied_pclCloud.push_back(_point);
+            PCLPoint _point = PCLPoint();
+            _point.x        = x;
+            _point.y        = y;
+            _point.z        = z;
+            _point.r        = r;
+            _point.g        = g;
+            _point.b        = b;
+            occupied_pclCloud.push_back(_point);
 #else
-        occupied_pclCloud.push_back(PCLPoint(float(x), float(y), float(z)));
+            occupied_pcl_cloud.push_back(PCLPoint(float(x), float(y), float(z)));
 #endif
+          }
+        }
       }
 
     } else {
+
+      if (!(free_subscribed || throttled_free_subscibed || pc_free_subscribed)) {
+        continue;
+      }
 
       // node not occupied => mark as free in 2D map if unknown so far
       double z         = it.getZ();
@@ -317,27 +340,32 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
       if (z + half_size > m_occupancyMinZ && z - half_size < m_occupancyMaxZ) {
 
-        if (m_publishFreeSpace) {
+        if (free_subscribed || throttled_free_subscibed) {
 
+          if (m_publishFreeSpace) {
+
+            double x = it.getX();
+            double y = it.getY();
+
+            unsigned idx = it.getDepth();
+            assert(idx < free_marker_array.markers.size());
+
+            geometry_msgs::Point cubeCenter;
+            cubeCenter.x = x;
+            cubeCenter.y = y;
+            cubeCenter.z = z;
+
+            free_marker_array.markers[idx].points.push_back(cubeCenter);
+          }
+        }
+
+        if (pc_free_subscribed) {
+          // insert into pointcloud:
           double x = it.getX();
           double y = it.getY();
 
-          unsigned idx = it.getDepth();
-          assert(idx < free_marker_array.markers.size());
-
-          geometry_msgs::Point cubeCenter;
-          cubeCenter.x = x;
-          cubeCenter.y = y;
-          cubeCenter.z = z;
-
-          free_marker_array.markers[idx].points.push_back(cubeCenter);
+          free_pcl_cloud.push_back(PCLPoint(float(x), float(y), float(z)));
         }
-
-        // insert into pointcloud:
-        double x = it.getX();
-        double y = it.getY();
-
-        free_pclCloud.push_back(PCLPoint(float(x), float(y), float(z)));
       }
     }
   }
@@ -352,40 +380,46 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
   /* occupied marker //{ */
 
-  for (size_t i = 0; i < occupied_marker_array.markers.size(); ++i) {
+  if (occupied_subscribed || throttled_occupied_subscibed) {
 
-    double size = octree->getNodeSize(i);
+    for (size_t i = 0; i < occupied_marker_array.markers.size(); ++i) {
 
-    occupied_marker_array.markers[i].header.frame_id = world_frame;
-    occupied_marker_array.markers[i].header.stamp    = ros::Time::now();
-    occupied_marker_array.markers[i].ns              = "map";
-    occupied_marker_array.markers[i].id              = i;
-    occupied_marker_array.markers[i].type            = visualization_msgs::Marker::CUBE_LIST;
-    occupied_marker_array.markers[i].scale.x         = size * _occupancy_cube_size_factor_;
-    occupied_marker_array.markers[i].scale.y         = size * _occupancy_cube_size_factor_;
-    occupied_marker_array.markers[i].scale.z         = size * _occupancy_cube_size_factor_;
+      double size = octree->getNodeSize(i);
 
-    if (!m_useColoredMap) {
-      occupied_marker_array.markers[i].color = m_color;
+      occupied_marker_array.markers[i].header.frame_id = world_frame;
+      occupied_marker_array.markers[i].header.stamp    = ros::Time::now();
+      occupied_marker_array.markers[i].ns              = "map";
+      occupied_marker_array.markers[i].id              = i;
+      occupied_marker_array.markers[i].type            = visualization_msgs::Marker::CUBE_LIST;
+      occupied_marker_array.markers[i].scale.x         = size * _occupancy_cube_size_factor_;
+      occupied_marker_array.markers[i].scale.y         = size * _occupancy_cube_size_factor_;
+      occupied_marker_array.markers[i].scale.z         = size * _occupancy_cube_size_factor_;
+
+      if (!m_useColoredMap) {
+        occupied_marker_array.markers[i].color = m_color;
+      }
+
+      if (occupied_marker_array.markers[i].points.size() > 0) {
+        occupied_marker_array.markers[i].action = visualization_msgs::Marker::ADD;
+      } else {
+        occupied_marker_array.markers[i].action = visualization_msgs::Marker::DELETE;
+      }
     }
 
-    if (occupied_marker_array.markers[i].points.size() > 0) {
-      occupied_marker_array.markers[i].action = visualization_msgs::Marker::ADD;
-    } else {
-      occupied_marker_array.markers[i].action = visualization_msgs::Marker::DELETE;
+    if (occupied_subscribed) {
+      pub_occupied_marker_.publish(occupied_marker_array);
     }
-  }
 
-  pub_occupied_marker_.publish(occupied_marker_array);
+    // publisher throttled
+    if (throttled_occupied_subscibed) {
 
-  // publisher throttled
-  {
-    const double last_pub_time = (ros::Time::now() - time_last_occupied_published_).toSec();
-    const double max_time      = 1.0 / throttle_occupied_vis_;
+      const double last_pub_time = (ros::Time::now() - time_last_occupied_published_).toSec();
+      const double max_time      = 1.0 / throttle_occupied_vis_;
 
-    if (last_pub_time >= max_time) {
-      pub_throttled_free_marker_.publish(occupied_marker_array);
-      time_last_occupied_published_ = ros::Time::now();
+      if (last_pub_time >= max_time) {
+        pub_throttled_occupied_marker_.publish(occupied_marker_array);
+        time_last_occupied_published_ = ros::Time::now();
+      }
     }
   }
 
@@ -393,53 +427,74 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
   /* free marker //{ */
 
-  for (size_t i = 0; i < free_marker_array.markers.size(); ++i) {
+  if (free_subscribed || throttled_free_subscibed) {
 
-    double size = octree->getNodeSize(i);
+    for (size_t i = 0; i < free_marker_array.markers.size(); ++i) {
 
-    free_marker_array.markers[i].header.frame_id = world_frame;
-    free_marker_array.markers[i].header.stamp    = ros::Time::now();
-    free_marker_array.markers[i].ns              = "map";
-    free_marker_array.markers[i].id              = i;
-    free_marker_array.markers[i].type            = visualization_msgs::Marker::CUBE_LIST;
-    free_marker_array.markers[i].scale.x         = size * _free_cube_size_factor_;
-    free_marker_array.markers[i].scale.y         = size * _free_cube_size_factor_;
-    free_marker_array.markers[i].scale.z         = size * _free_cube_size_factor_;
-    free_marker_array.markers[i].color           = m_colorFree;
+      double size = octree->getNodeSize(i);
 
-    if (free_marker_array.markers[i].points.size() > 0)
-      free_marker_array.markers[i].action = visualization_msgs::Marker::ADD;
-    else
-      free_marker_array.markers[i].action = visualization_msgs::Marker::DELETE;
-  }
+      free_marker_array.markers[i].header.frame_id = world_frame;
+      free_marker_array.markers[i].header.stamp    = ros::Time::now();
+      free_marker_array.markers[i].ns              = "map";
+      free_marker_array.markers[i].id              = i;
+      free_marker_array.markers[i].type            = visualization_msgs::Marker::CUBE_LIST;
+      free_marker_array.markers[i].scale.x         = size * _free_cube_size_factor_;
+      free_marker_array.markers[i].scale.y         = size * _free_cube_size_factor_;
+      free_marker_array.markers[i].scale.z         = size * _free_cube_size_factor_;
+      free_marker_array.markers[i].color           = m_colorFree;
 
-  pub_free_marker_.publish(free_marker_array);
+      if (free_marker_array.markers[i].points.size() > 0)
+        free_marker_array.markers[i].action = visualization_msgs::Marker::ADD;
+      else
+        free_marker_array.markers[i].action = visualization_msgs::Marker::DELETE;
+    }
 
-  // publisher throttled
-  {
-    const double last_pub_time = (ros::Time::now() - time_last_free_published_).toSec();
-    const double max_time      = 1.0 / throttle_free_vis_;
+    if (free_subscribed) {
+      pub_free_marker_.publish(free_marker_array);
+    }
 
-    if (last_pub_time >= max_time) {
-      pub_throttled_occupied_marker_.publish(free_marker_array);
-      time_last_free_published_ = ros::Time::now();
+    // publisher throttled
+    if (throttled_free_subscibed) {
+
+      const double last_pub_time = (ros::Time::now() - time_last_free_published_).toSec();
+      const double max_time      = 1.0 / throttle_free_vis_;
+
+      if (last_pub_time >= max_time) {
+        pub_throttled_free_marker_.publish(free_marker_array);
+        time_last_free_published_ = ros::Time::now();
+      }
     }
   }
 
   //}
 
-  sensor_msgs::PointCloud2 cloud;
-  // occupied
-  pcl::toROSMsg(occupied_pclCloud, cloud);
-  cloud.header.frame_id = world_frame;
-  cloud.header.stamp    = ros::Time::now();
-  pub_occupied_pc_.publish(cloud);
+  /* occupied pointcloud //{ */
 
-  // free
-  pcl::toROSMsg(free_pclCloud, cloud);
-  cloud.header.frame_id = world_frame;
-  cloud.header.stamp    = ros::Time::now();
-  pub_free_pc_.publish(cloud);
+  if (pc_occupied_subscribed) {
+    sensor_msgs::PointCloud2 cloud;
+
+    // occupied
+    pcl::toROSMsg(occupied_pcl_cloud, cloud);
+    cloud.header.frame_id = world_frame;
+    cloud.header.stamp    = ros::Time::now();
+    pub_occupied_pc_.publish(cloud);
+  }
+
+  //}
+
+  /* free pointcloud //{ */
+
+  if (pc_free_subscribed) {
+
+    sensor_msgs::PointCloud2 cloud;
+
+    pcl::toROSMsg(free_pcl_cloud, cloud);
+    cloud.header.frame_id = world_frame;
+    cloud.header.stamp    = ros::Time::now();
+    pub_free_pc_.publish(cloud);
+  }
+
+  //}
 }
 
 //}
