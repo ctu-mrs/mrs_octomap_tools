@@ -1,8 +1,6 @@
 /* includes //{ */
 
 #include "octomap/OcTreeNode.h"
-#include "octomap/Pointcloud.h"
-#include "octomap/octomap_types.h"
 #include <memory>
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
@@ -104,6 +102,12 @@ private:
   bool clearOutsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max);
   bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution);
   bool copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool copyInsideBBX2(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max);
+
+  octomap::OcTreeNode* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const octomap::OcTreeKey& key, unsigned int depth,
+                                       unsigned int max_depth);
+
+  octomap::OcTreeNode* touchNode(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, unsigned int target_depth);
 
   // | ------------------------ undo list ----------------------- |
 
@@ -1280,11 +1284,13 @@ bool OctomapEditor::pruneInBBX(std::shared_ptr<OcTree_t>& octree, const octomap:
   octree_new->setClampingThresMin(octree->getClampingThresMinLog());
   octree_new->setClampingThresMax(octree->getClampingThresMaxLog());
 
-  copyInsideBBX(octree_, octree_new, p_min, p_max);
+  copyInsideBBX2(octree_, octree_new, p_min, p_max);
 
   octree_new->prune();
 
-  copyInsideBBX(octree_new, octree_, p_min, p_max);
+  setUnknownInsideBBX(octree_, p_min, p_max);
+
+  copyInsideBBX2(octree_new, octree_, p_min, p_max);
 
   return true;
 }
@@ -1583,6 +1589,8 @@ bool OctomapEditor::setResolution(std::shared_ptr<OcTree_t>& octree, const doubl
 bool OctomapEditor::copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min,
                                   const octomap::point3d& p_max) {
 
+  mrs_lib::ScopeTimer scope_time("copyInsideBBX()");
+
   octomap::OcTreeKey minKey, maxKey;
 
   if (!from->coordToKeyChecked(p_min, minKey) || !from->coordToKeyChecked(p_max, maxKey)) {
@@ -1603,6 +1611,84 @@ bool OctomapEditor::copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_p
   }
 
   return true;
+}
+
+//}
+
+/* copyInsideBBX2() //{ */
+
+bool OctomapEditor::copyInsideBBX2(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min,
+                                   const octomap::point3d& p_max) {
+
+  mrs_lib::ScopeTimer scope_time("copyInsideBBX2()");
+
+  octomap::OcTreeKey minKey, maxKey;
+
+  if (!from->coordToKeyChecked(p_min, minKey) || !from->coordToKeyChecked(p_max, maxKey)) {
+    return false;
+  }
+
+  octomap::OcTreeNode* root = to->getRoot();
+
+  bool got_root = root ? true : false;
+
+  if (!got_root) {
+    octomap::OcTreeKey key = to->coordToKey(p_min.x() - to->getResolution() * 2.0, p_min.y(), p_min.z(), to->getTreeDepth());
+    to->setNodeValue(key, 1.0);
+  }
+
+  for (OcTree_t::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
+
+    octomap::OcTreeKey   k    = it.getKey();
+    octomap::OcTreeNode* node = touchNode(to, k, it.getDepth());
+    node->setValue(it->getValue());
+  }
+
+  if (!got_root) {
+    octomap::OcTreeKey key = to->coordToKey(p_min.x() - to->getResolution() * 2.0, p_min.y(), p_min.z(), to->getTreeDepth());
+    to->deleteNode(key, to->getTreeDepth());
+  }
+
+  return true;
+}
+
+//}
+
+/* touchNode() //{ */
+
+octomap::OcTreeNode* OctomapEditor::touchNode(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, unsigned int target_depth = 0) {
+
+  return touchNodeRecurs(octree, octree->getRoot(), key, 0, target_depth);
+}
+
+//}
+
+/* touchNodeRecurs() //{ */
+
+octomap::OcTreeNode* OctomapEditor::touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const octomap::OcTreeKey& key,
+                                                    unsigned int depth, unsigned int max_depth = 0) {
+
+  assert(node);
+
+  // follow down to last level
+  if (depth < octree->getTreeDepth() && (max_depth == 0 || depth < max_depth)) {
+
+    unsigned int pos = octomap::computeChildIdx(key, int(octree->getTreeDepth() - depth - 1));
+
+    /* ROS_INFO("pos: %d", pos); */
+    if (!octree->nodeChildExists(node, pos)) {
+
+      // not a pruned node, create requested child
+      octree->createNodeChild(node, pos);
+    }
+
+    return touchNodeRecurs(octree, octree->getNodeChild(node, pos), key, depth + 1, max_depth);
+  }
+
+  // at last level, update node, end of recursion
+  else {
+    return node;
+  }
 }
 
 //}
