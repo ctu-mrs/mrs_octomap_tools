@@ -103,6 +103,7 @@ private:
   bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution);
   bool copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max);
   bool copyInsideBBX2(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const double& y, const double& z);
 
   octomap::OcTreeNode* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const octomap::OcTreeKey& key, unsigned int depth,
                                        unsigned int max_depth);
@@ -202,6 +203,7 @@ void OctomapEditor::onInit() {
   params_.action_set_unknown_to_free   = false;
   params_.action_remove_free           = false;
   params_.undo                         = false;
+  params_.action_translate             = false;
 
   params_.action_save = false;
   params_.action_load = false;
@@ -210,6 +212,10 @@ void OctomapEditor::onInit() {
   params_.expand        = false;
   params_.prune_in_roi  = false;
   params_.expand_in_roi = false;
+
+  params_.translate_x = 0;
+  params_.translate_y = 0;
+  params_.translate_z = 0;
 
   params_.roi_resize_plus_x  = false;
   params_.roi_resize_minus_x = false;
@@ -272,6 +278,27 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   // | ------------------- process the actions ------------------ |
 
+  /* resolution //{ */
+
+  if (fabs(octree_->getResolution() - params.resolution) > 1e-3) {
+
+    ROS_INFO("[OctomapEditor]: changing resolution");
+
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      setResolution(octree_, params.resolution);
+    }
+
+    drs_->updateConfig(params);
+
+    map_updated_ = true;
+  }
+
+  //}
+  
   /* load //{ */
 
   if (params.action_load) {
@@ -471,6 +498,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
     {
       std::scoped_lock lock(mutex_octree_);
 
+      mrs_lib::ScopeTimer scope_timer("Prune in ROI");
+
       pruneInBBX(octree_, roi_min, roi_max);
     }
 
@@ -490,6 +519,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     {
       std::scoped_lock lock(mutex_octree_);
+
+      mrs_lib::ScopeTimer scope_timer("Expand in ROI");
 
       expandInBBX(octree_, roi_min, roi_max);
     }
@@ -546,20 +577,21 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   //}
 
-  /* resolution //{ */
+  /* translate //{ */
 
-  if (fabs(octree_->getResolution() - params.resolution) > 1e-3) {
+  if (params.action_translate) {
 
-    ROS_INFO("[OctomapEditor]: changing resolution");
-
-    saveToUndoList();
+    ROS_INFO("[OctomapEditor]: translating map");
 
     {
       std::scoped_lock lock(mutex_octree_);
 
-      setResolution(octree_, params.resolution);
+      mrs_lib::ScopeTimer scope_time("expand()");
+
+      translateMap(octree_, params.translate_x, params.translate_y, params.translate_z);
     }
 
+    params.action_translate = false;
     drs_->updateConfig(params);
 
     map_updated_ = true;
@@ -1578,6 +1610,48 @@ bool OctomapEditor::setResolution(std::shared_ptr<OcTree_t>& octree, const doubl
   octree_ = octree_new;
 
   ROS_INFO("[OctomapEditor]: resolution change finished");
+
+  return true;
+}
+
+//}
+
+/* translateMap() //{ */
+
+bool OctomapEditor::translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const double& y, const double& z) {
+
+  ROS_INFO("[OctomapServer]: translating map by %.2f, %.2f, %.2f", x, y, z);
+
+  octree->expand();
+
+  // allocate the new future octree
+  std::shared_ptr<OcTree_t> octree_new = std::make_shared<OcTree_t>(octree_resolution_);
+  octree_new->setProbHit(octree->getProbHit());
+  octree_new->setProbMiss(octree->getProbMiss());
+  octree_new->setClampingThresMin(octree->getClampingThresMin());
+  octree_new->setClampingThresMax(octree->getClampingThresMax());
+
+  for (OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
+
+    auto coords = it.getCoordinate();
+
+    coords.x() += float(x);
+    coords.y() += float(y);
+    coords.z() += float(z);
+
+    auto value = it->getValue();
+    auto key   = it.getKey();
+
+    auto new_key = octree_new->coordToKey(coords);
+
+    octree_new->setNodeValue(new_key, value);
+  }
+
+  octree_new->prune();
+
+  octree = octree_new;
+
+  ROS_INFO("[OctomapServer]: map translated");
 
   return true;
 }
