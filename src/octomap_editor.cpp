@@ -1,6 +1,5 @@
 /* includes //{ */
 
-#include "octomap/OcTreeNode.h"
 #include <memory>
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
@@ -40,6 +39,12 @@ using OcTree_t = octomap::ColorOcTree;
 #else
 using OcTree_t = octomap::OcTree;
 #endif
+
+typedef enum
+{
+  DILATE,
+  ERODE,
+} Morphology_t;
 
 //}
 
@@ -104,6 +109,9 @@ private:
   bool copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max);
   bool copyInsideBBX2(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max);
   bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const double& y, const double& z);
+  bool morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operation, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  std::vector<octomap::OcTreeKey> getNeighborhood(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key);
+  octomap::OcTreeKey              getKeyInDir(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, const std::vector<int>& direction);
 
   octomap::OcTreeNode* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const octomap::OcTreeKey& key, unsigned int depth,
                                        unsigned int max_depth);
@@ -128,6 +136,13 @@ private:
   void                                             callbackDrs(octomap_tools::octomap_editorConfig& params, uint32_t level);
   DrsParams_t                                      params_;
   std::mutex                                       mutex_params_;
+
+  // expansions
+
+  const std::vector<std::vector<int>> EXPANSION_DIRECTIONS = {{-1, -1, -1}, {-1, -1, 0}, {-1, -1, 1}, {-1, 0, -1}, {-1, 0, 0}, {-1, 0, 1}, {-1, 1, -1},
+                                                              {-1, 1, 0},   {-1, 1, 1},  {0, -1, -1}, {0, -1, 0},  {0, -1, 1}, {0, 0, -1}, {0, 0, 1},
+                                                              {0, 1, -1},   {0, 1, 0},   {0, 1, 1},   {1, -1, -1}, {1, -1, 0}, {1, -1, 1}, {1, 0, -1},
+                                                              {1, 0, 0},    {1, 0, 1},   {1, 1, -1},  {1, 1, 0},   {1, 1, 1}};
 };
 
 //}
@@ -204,6 +219,8 @@ void OctomapEditor::onInit() {
   params_.action_remove_free           = false;
   params_.undo                         = false;
   params_.action_translate             = false;
+  params_.action_dilate                = false;
+  params_.action_erode                 = false;
 
   params_.action_save = false;
   params_.action_load = false;
@@ -242,7 +259,7 @@ void OctomapEditor::onInit() {
 
   // | ------------------------- timers ------------------------- |
 
-  timer_main_ = nh_.createTimer(ros::Rate(10.0), &OctomapEditor::timerMain, this);
+  timer_main_ = nh_.createTimer(ros::Rate(1.0), &OctomapEditor::timerMain, this);
 
   // | --------------------- finish the init -------------------- |
 
@@ -273,14 +290,16 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
   // | --------------------- update the ROI --------------------- |
 
-  octomap::point3d roi_min(float(params_.roi_x - params_.roi_width/2.0), float(params_.roi_y - params_.roi_depth/2.0), float(params_.roi_z - params_.roi_height/2.0));
-  octomap::point3d roi_max(float(params_.roi_x + params_.roi_width/2.0), float(params_.roi_y + params_.roi_depth/2.0), float(params_.roi_z + params_.roi_height/2.0));
+  octomap::point3d roi_min(float(params_.roi_x - params_.roi_width / 2.0), float(params_.roi_y - params_.roi_depth / 2.0),
+                           float(params_.roi_z - params_.roi_height / 2.0));
+  octomap::point3d roi_max(float(params_.roi_x + params_.roi_width / 2.0), float(params_.roi_y + params_.roi_depth / 2.0),
+                           float(params_.roi_z + params_.roi_height / 2.0));
 
   // | ------------------- process the actions ------------------ |
 
   /* resolution //{ */
 
-  if (fabs(octree_->getResolution() - params.resolution && !params.action_load) > 1e-3) {
+  if (fabs(octree_->getResolution() - params.resolution) > 1e-3 && !params.action_load) {
 
     ROS_INFO("[OctomapEditor]: changing resolution");
 
@@ -417,6 +436,50 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
     }
 
     params.action_remove_free = false;
+    drs_->updateConfig(params);
+
+    map_updated_ = true;
+  }
+
+  //}
+
+  /* dilate //{ */
+
+  if (params.action_dilate) {
+
+    ROS_INFO("[OctomapEditor]: dilating map");
+
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      morphologyOperation(octree_, DILATE, roi_min, roi_max);
+    }
+
+    params.action_dilate = false;
+    drs_->updateConfig(params);
+
+    map_updated_ = true;
+  }
+
+  //}
+
+  /* erode //{ */
+
+  if (params.action_erode) {
+
+    ROS_INFO("[OctomapEditor]: eroding map");
+
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      morphologyOperation(octree_, ERODE, roi_min, roi_max);
+    }
+
+    params.action_erode = false;
     drs_->updateConfig(params);
 
     map_updated_ = true;
@@ -771,10 +834,10 @@ void OctomapEditor::timerMain([[maybe_unused]] const ros::TimerEvent& evt) {
 
   ROS_INFO_ONCE("[OctomapEditor]: main timer spinning");
 
-  if (map_updated_) {
-    publishMap();
-    map_updated_ = false;
-  }
+  /* if (map_updated_) { */
+  publishMap();
+  /* map_updated_ = false; */
+  /* } */
 
   publishMarkers();
 
@@ -897,15 +960,15 @@ void OctomapEditor::publishMarkers(void) {
   bv_.clearVisuals();
 
   // roi corners
-  Eigen::Vector3d bot1(params.roi_x - params.roi_width/2.0, params.roi_y - params.roi_depth/2.0, params.roi_z - params.roi_height/2.0);
-  Eigen::Vector3d bot2(params.roi_x + params.roi_width/2.0, params.roi_y - params.roi_depth/2.0, params.roi_z - params.roi_height/2.0);
-  Eigen::Vector3d bot3(params.roi_x + params.roi_width/2.0, params.roi_y + params.roi_depth/2.0, params.roi_z - params.roi_height/2.0);
-  Eigen::Vector3d bot4(params.roi_x - params.roi_width/2.0, params.roi_y + params.roi_depth/2.0, params.roi_z - params.roi_height/2.0);
+  Eigen::Vector3d bot1(params.roi_x - params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
+  Eigen::Vector3d bot2(params.roi_x + params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
+  Eigen::Vector3d bot3(params.roi_x + params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
+  Eigen::Vector3d bot4(params.roi_x - params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
 
-  Eigen::Vector3d top1(params.roi_x - params.roi_width/2.0, params.roi_y - params.roi_depth/2.0, params.roi_z + params.roi_height/2.0);
-  Eigen::Vector3d top2(params.roi_x + params.roi_width/2.0, params.roi_y - params.roi_depth/2.0, params.roi_z + params.roi_height/2.0);
-  Eigen::Vector3d top3(params.roi_x + params.roi_width/2.0, params.roi_y + params.roi_depth/2.0, params.roi_z + params.roi_height/2.0);
-  Eigen::Vector3d top4(params.roi_x - params.roi_width/2.0, params.roi_y + params.roi_depth/2.0, params.roi_z + params.roi_height/2.0);
+  Eigen::Vector3d top1(params.roi_x - params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
+  Eigen::Vector3d top2(params.roi_x + params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
+  Eigen::Vector3d top3(params.roi_x + params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
+  Eigen::Vector3d top4(params.roi_x - params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
 
   mrs_lib::geometry::Ray ray1 = mrs_lib::geometry::Ray(bot1, bot2);
   mrs_lib::geometry::Ray ray2 = mrs_lib::geometry::Ray(bot2, bot3);
@@ -1663,6 +1726,7 @@ bool OctomapEditor::translateMap(std::shared_ptr<OcTree_t>& octree, const double
 
 /* copyInsideBBX() //{ */
 
+// SLOW AND DEPRICATED
 bool OctomapEditor::copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min,
                                   const octomap::point3d& p_max) {
 
@@ -1766,6 +1830,138 @@ octomap::OcTreeNode* OctomapEditor::touchNodeRecurs(std::shared_ptr<OcTree_t>& o
   else {
     return node;
   }
+}
+
+//}
+
+/* morphologyOperation() //{ */
+
+bool OctomapEditor::morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operation, const octomap::point3d& p_min,
+                                        const octomap::point3d& p_max) {
+
+  expandInBBX(octree, p_min, p_max);
+
+  /* double min_x, min_y, min_z; */
+  /* double max_x, max_y, max_z; */
+
+  /* octree_->getMetricMin(min_x, min_y, min_z); */
+  /* octree_->getMetricMax(max_x, max_y, max_z); */
+
+  /* octomap::point3d p_min(min_x, min_y, min_z); */
+  /* octomap::point3d p_max(max_x, max_y, max_z); */
+
+  /* p_min -= octomap::point3d(5, 5, 5); */
+  /* p_max += octomap::point3d(5, 5, 5); */
+
+  std::shared_ptr<OcTree_t> octree_filtered = std::make_shared<OcTree_t>(octree->getResolution());
+
+  octree_filtered->setProbHit(octree->getProbHit());
+  octree_filtered->setProbMiss(octree->getProbMiss());
+  octree_filtered->setClampingThresMin(octree->getClampingThresMinLog());
+  octree_filtered->setClampingThresMax(octree->getClampingThresMaxLog());
+
+  octomap::OcTreeKey min_key, max_key;
+
+  if (!octree->coordToKeyChecked(p_min, min_key) || !octree->coordToKeyChecked(p_max, max_key)) {
+    return false;
+  }
+
+  auto coord_min = octree->keyToCoord(min_key);
+  auto coord_max = octree->keyToCoord(max_key);
+
+  for (int i = 0; i < int((coord_max.x() - coord_min.x()) / octree->getResolution()); i++) {
+
+    double x = coord_min.x() + i * octree->getResolution();
+
+    for (int j = 0; j < int((coord_max.y() - coord_min.y()) / octree->getResolution()); j++) {
+
+      double y = coord_min.y() + j * octree->getResolution();
+
+      for (int k = 0; k < int((coord_max.z() - coord_min.z()) / octree->getResolution()); k++) {
+
+        double z = coord_min.z() + k * octree->getResolution();
+
+        octomap::OcTreeKey   key  = octree->coordToKey(x, y, z, octree->getTreeDepth());
+        octomap::OcTreeNode* node = octree->search(key);
+
+        std::vector<octomap::OcTreeKey> neighbours = getNeighborhood(octree, key);
+
+        int count_free     = 0;
+        int count_occupied = 0;
+        int count_unknown  = 0;
+
+        for (auto& n : neighbours) {
+
+          octomap::OcTreeNode* nnode = octree->search(n);
+
+          if (nnode && octree->isNodeOccupied(nnode)) {
+            count_occupied++;
+          } else if (nnode && !octree->isNodeOccupied(nnode)) {
+            count_free++;
+          } else {
+            count_unknown++;
+          }
+        }
+
+        if (operation == DILATE) {
+          if (count_occupied >= 1) {
+            octree_filtered->setNodeValue(key, 1.0);
+          } else {
+            if (node) {
+              octree_filtered->setNodeValue(key, node->getValue());
+            }
+          }
+        } else if (operation == ERODE) {
+          if (node && octree->isNodeOccupied(node) && (count_occupied < 26)) {
+            octree_filtered->setNodeValue(key, -1.0);
+          } else {
+            if (node) {
+              octree_filtered->setNodeValue(key, node->getValue());
+            }
+          }
+        }
+      }
+    }
+  }
+
+  octree_filtered->prune();
+
+  copyInsideBBX(octree_filtered, octree, p_min, p_max);
+
+  return true;
+}
+
+//}
+
+/* getNeighborKeys() //{ */
+
+std::vector<octomap::OcTreeKey> OctomapEditor::getNeighborhood(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key) {
+
+  std::vector<octomap::OcTreeKey> neighbors;
+
+  for (auto& d : EXPANSION_DIRECTIONS) {
+
+    auto newkey = getKeyInDir(octree, key, d);
+
+    neighbors.push_back(newkey);
+  }
+
+  return neighbors;
+}
+
+//}
+
+/* getKeyInDir() //{ */
+
+octomap::OcTreeKey OctomapEditor::getKeyInDir(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, const std::vector<int>& direction) {
+
+  octomap::OcTreeKey k;
+
+  k.k[0] = key.k[0] + direction[0];
+  k.k[1] = key.k[1] + direction[1];
+  k.k[2] = key.k[2] + direction[2];
+
+  return k;
 }
 
 //}

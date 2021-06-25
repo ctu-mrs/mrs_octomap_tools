@@ -16,18 +16,16 @@
   <arg unless="$(arg debug)" name="launch_prefix" value="" />
 
   <arg name="nodelet_manager_name" default="octomap_editor_nodelet_manager" />
-  <arg     if="$(eval arg('standalone') or arg('debug'))" name="nodelet" value="standalone" />
-  <arg unless="$(eval arg('standalone') or arg('debug'))" name="nodelet" value="load" />
-  <arg     if="$(eval arg('standalone') or arg('debug'))" name="nodelet_manager" value="" />
-  <arg unless="$(eval arg('standalone') or arg('debug'))" name="nodelet_manager" value="$(arg nodelet_manager_name)" />
+  <arg name="nodelet" value="load" />
+  <arg name="nodelet_manager" value="$(arg nodelet_manager_name)" />
 
   <group ns="$(arg UAV_NAME)">
 
-    <node pkg="nodelet" type="nodelet" name="$(arg nodelet_manager_name)" args="manager" output="screen" launch-prefix="$(arg launch_prefix)" respawn="true">
+    <node pkg="nodelet" type="nodelet" name="$(arg nodelet_manager_name)" args="manager" output="screen" launch-prefix="$(arg launch_prefix)">
       <param name="num_worker_threads" value="4" />
     </node>
 
-    <node pkg="nodelet" type="nodelet" name="octomap_editor" args="$(arg nodelet) octomap_tools/OctomapEditor $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
+    <node pkg="nodelet" type="nodelet" name="octomap_editor" args="$(arg nodelet) octomap_tools/OctomapEditor $(arg nodelet_manager)" output="screen">
 
       <rosparam file="$(find octomap_tools)/config/octomap_editor.yaml" command="load" />
 
