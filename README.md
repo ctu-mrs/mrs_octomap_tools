@@ -15,6 +15,7 @@ Supported operations:
   * setting/unsetting free/occupied/unknown space within the bounding box or outside of the bounding box
   * changing of resolution of the octomap
   * creating free space above the ground level
+  * dilation and erosion
   * expanding and pruning the tree and the bounding box region (mainly for testing)
   * undo (until your memory runs out)
 
