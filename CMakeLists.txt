@@ -39,7 +39,7 @@ find_package(octomap REQUIRED)
 
 catkin_package(
   CATKIN_DEPENDS roscpp nodelet std_msgs mrs_lib visualization_msgs
-  LIBRARIES OctomapRvizVisualizer OctomapEditor
+  LIBRARIES OctomapRvizVisualizer OctomapEditor OctomapSaver
   )
 
 include_directories(
@@ -78,6 +78,23 @@ add_dependencies(OctomapEditor
   )
 
 target_link_libraries(OctomapEditor
+  ${catkin_LIBRARIES}
+  ${OCTOMAP_LIBRARIES}
+  ${PCL_LIBRARIES}
+  )
+
+# OctomapSaver
+
+add_library(OctomapSaver
+  src/octomap_saver.cpp
+  )
+
+add_dependencies(OctomapSaver
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+  )
+
+target_link_libraries(OctomapSaver
   ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${PCL_LIBRARIES}
