@@ -1,14 +1,14 @@
 map:
-  name: "default"
+  name: "forest_cor.ot"
 
 roi_default:
 
-  width: 30.0 # [m]
-  depth: 30.0 # [m]
-  height: 10.0 # [m]
+  width: 80.0 # [m]
+  depth: 80.0 # [m]
+  height: 60.0 # [m]
 
-  x: 230.0 # [m]
-  y: 230.0 # [m]
+  x: 0.0 # [m]
+  y: 0.0 # [m]
   z: 0.0 # [m]
 
   move_step: 5.0 # [m]

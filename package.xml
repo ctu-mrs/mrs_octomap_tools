@@ -15,8 +15,8 @@
   <depend>roscpp</depend>
   <depend>nodelet</depend>
   <depend>std_msgs</depend>
-  <depend>octomap</depend>
   <depend>octomap_msgs</depend>
+  <depend>octomap_ros</depend>
   <depend>mrs_lib</depend>
   <depend>visualization_msgs</depend>
   <depend>pcl_conversions</depend>

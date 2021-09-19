@@ -1,5 +1,6 @@
 /* includes //{ */
 
+#include "octomap/AbstractOcTree.h"
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
 
@@ -26,13 +27,9 @@ namespace octomap_saver
 /* using //{ */
 
 #ifdef COLOR_OCTOMAP_SERVER
-using PCLPoint      = pcl::PointXYZRGB;
-using PCLPointCloud = pcl::PointCloud<PCLPoint>;
-using OcTreeT       = octomap::ColorOcTree;
+using OcTreeT = octomap::ColorOcTree;
 #else
-using PCLPoint      = pcl::PointXYZ;
-using PCLPointCloud = pcl::PointCloud<PCLPoint>;
-using OcTreeT       = octomap::OcTree;
+using OcTreeT = octomap::OcTree;
 #endif
 
 //}
@@ -53,6 +50,7 @@ private:
 
   std::string _map_path_;
   std::string _map_name_;
+  bool        _binary_;
 
   mrs_lib::SubscribeHandler<octomap_msgs::Octomap> sh_octomap_;
 
@@ -60,7 +58,7 @@ private:
 
   // | ------------------------ routines ------------------------ |
 
-  bool saveToFile(std::shared_ptr<octomap::OcTree> &octree, const std::string& filename);
+  bool saveToFile(std::shared_ptr<octomap::OcTree>& octree, const std::string& filename);
 };
 
 //}
@@ -79,6 +77,7 @@ void OctomapSaver::onInit() {
 
   param_loader.loadParam("map_path", _map_path_);
   param_loader.loadParam("map/name", _map_name_);
+  param_loader.loadParam("binary", _binary_);
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[OctomapSaver]: could not load all parameters");
@@ -121,7 +120,13 @@ void OctomapSaver::callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octom
 
   octomap_msgs::OctomapConstPtr octomap = wrp.getMsg();
 
-  octomap::AbstractOcTree* tree_ptr = octomap_msgs::fullMsgToMap(*octomap);
+  octomap::AbstractOcTree* tree_ptr;
+
+  if (octomap->binary) {
+    tree_ptr = octomap_msgs::binaryMsgToMap(*octomap);
+  } else {
+    tree_ptr = octomap_msgs::fullMsgToMap(*octomap);
+  }
 
   if (!tree_ptr) {
     ROS_WARN_THROTTLE(1.0, "[OctomapSaver]: octomap message is empty!");
@@ -139,11 +144,13 @@ void OctomapSaver::callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octom
 
 /* saveToFile() //{ */
 
-bool OctomapSaver::saveToFile(std::shared_ptr<octomap::OcTree> &octree, const std::string& filename) {
+bool OctomapSaver::saveToFile(std::shared_ptr<octomap::OcTree>& octree, const std::string& filename) {
 
-  std::string file_path        = _map_path_ + "/" + filename + ".ot";
-  std::string tmp_file_path    = _map_path_ + "/tmp_" + filename + ".ot";
-  std::string backup_file_path = _map_path_ + "/" + filename + "_backup.ot";
+  std::string ext = _binary_ ? ".bt" : ".ot";
+
+  std::string file_path        = _map_path_ + "/" + filename + ext;
+  std::string tmp_file_path    = _map_path_ + "/tmp_" + filename + ext;
+  std::string backup_file_path = _map_path_ + "/" + filename + ext;
 
   try {
     std::filesystem::rename(file_path, backup_file_path);
@@ -154,7 +161,15 @@ bool OctomapSaver::saveToFile(std::shared_ptr<octomap::OcTree> &octree, const st
 
   std::string suffix = file_path.substr(file_path.length() - 3, 3);
 
-  if (!octree->write(tmp_file_path)) {
+  bool succ = false;
+
+  if (_binary_) {
+   succ = octree->writeBinary(tmp_file_path) ;
+  } else {
+   succ = octree->write(tmp_file_path) ;
+  }
+
+  if (!succ) {
     ROS_ERROR("[OctomapEditor]: error writing to file '%s'", file_path.c_str());
     return false;
   }

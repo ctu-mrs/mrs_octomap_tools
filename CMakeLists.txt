@@ -23,6 +23,8 @@ find_package(catkin REQUIRED
   visualization_msgs
   pcl_conversions
   dynamic_reconfigure
+  octomap_ros
+  octomap_msgs
   )
 
 generate_dynamic_reconfigure_options(
@@ -34,18 +36,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options("-fPIC")
 add_compile_options("${PCL_COMPILE_OPTIONS}")
+add_compile_options("-O3")
 
 find_package(octomap REQUIRED)
+add_definitions(-DOCTOMAP_NODEBUGOUT)
 
 catkin_package(
   CATKIN_DEPENDS roscpp nodelet std_msgs mrs_lib visualization_msgs
   LIBRARIES OctomapRvizVisualizer OctomapEditor OctomapSaver
+  DEPENDS OCTOMAP
   )
 
 include_directories(
   ${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake
   ${catkin_INCLUDE_DIRS}
-  ${octomap_INCLUDE_DIRS}
+  ${OCTOMAP_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   )
 

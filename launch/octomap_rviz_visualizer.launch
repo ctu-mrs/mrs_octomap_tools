@@ -7,7 +7,7 @@
 
     <!-- other args -->
   <arg name="debug" default="false" />
-  <arg name="standalone" default="false" />
+  <arg name="standalone" default="true" />
   <arg name="custom_config" default="" />
 
   <arg name="node_name" default="octomap_rviz_visualizer" />

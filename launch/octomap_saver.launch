@@ -1,16 +1,16 @@
 <launch>
 
-  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
   <arg name="LOGGER_DEBUG" default="$(optenv LOGGER_DEBUG false)" />
+
+  <arg name="UAV_NAME" default="uav1" />
+  <arg name="map_path" default="$(env HOME)/maps" />
+  <arg name="map_topic" default="/$(arg UAV_NAME)/octomap_server/octomap_global_binary" />
 
   <env name="ROSCONSOLE_CONFIG_FILE" if="$(eval arg('LOGGER_DEBUG'))" value="$(find octomap_tools)/config/debug_verbosity.yaml" />
 
     <!-- other args -->
   <arg name="debug" default="false" />
   <arg name="standalone" default="true" />
-  <arg name="custom_config" default="" />
-
-  <arg name="map_path" default="$(env HOME)/maps" />
 
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch" />
   <arg unless="$(arg debug)" name="launch_prefix" value="" />
@@ -26,12 +26,10 @@
 
       <rosparam file="$(find octomap_tools)/config/octomap_saver.yaml" command="load" />
 
-      <rosparam if="$(eval not arg('custom_config') == '')" file="$(arg custom_config)" />
-
       <param name="map_path" type="string" value="$(arg map_path)" />
 
       <!-- topics in -->
-      <remap from="~octomap_in" to="octomap_full" />
+      <remap from="~octomap_in" to="$(arg map_topic)" />
 
     </node>
 

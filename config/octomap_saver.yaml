@@ -1,2 +1,4 @@
+binary: true
+
 map:
-  name: "saved_map"
+  name: "forest_binary"
