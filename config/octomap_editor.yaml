@@ -1,5 +1,7 @@
 map:
-  name: "forest_cor.ot"
+  # name: "organ_large.bt"
+  # name: "default.ot"
+  name: "forest_my.ot"
 
 roi_default:
 

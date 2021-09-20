@@ -1,4 +1,4 @@
-binary: true
+binary: false
 
 map:
-  name: "forest_binary"
+  name: "organ_2"
