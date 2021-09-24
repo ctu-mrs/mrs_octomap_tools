@@ -108,6 +108,7 @@ private:
   bool clearOutsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max);
   bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution);
   bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor);
+  bool removeCeiling(std::shared_ptr<OcTree_t>& octree);
   bool copy(std::shared_ptr<OcTree_t>& octree);
   bool clear(std::shared_ptr<OcTree_t>& octree);
   bool copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max);
@@ -228,6 +229,7 @@ void OctomapEditor::onInit() {
   params_.action_refractor             = false;
   params_.action_copy                  = false;
   params_.action_clear                 = false;
+  params_.action_remove_ceiling        = false;
 
   params_.action_save = false;
   params_.action_load = false;
@@ -343,6 +345,28 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
     params.action_refractor = false;
     params.resolution       = octree_resolution_;
+    drs_->updateConfig(params);
+
+    map_updated_ = true;
+  }
+
+  //}
+
+  /* remove ceiling //{ */
+
+  if (params.action_remove_ceiling) {
+
+    ROS_INFO("[OctomapEditor]: removing ceiling");
+
+    saveToUndoList();
+
+    {
+      std::scoped_lock lock(mutex_octree_);
+
+      removeCeiling(octree_);
+    }
+
+    params.action_remove_ceiling = false;
     drs_->updateConfig(params);
 
     map_updated_ = true;
@@ -1815,9 +1839,9 @@ bool OctomapEditor::refractor(std::shared_ptr<OcTree_t>& octree, const int fract
 
       const unsigned int old_depth = it.getDepth();
 
-      octomap::OcTreeNode* orig_node = it.getNode();
+      /* octomap::OcTreeNode* orig_node = it.getNode(); */
 
-      octree->eatChildren(orig_node);
+      /* octree->eatChildren(orig_node); */
 
       if (old_depth >= max_depth) {
         max_depth = old_depth;
@@ -1885,53 +1909,12 @@ bool OctomapEditor::refractor(std::shared_ptr<OcTree_t>& octree, const int fract
 
 //}
 
-/* copy() //{ */
+/* removeCeiling() //{ */
 
-bool OctomapEditor::copy(std::shared_ptr<OcTree_t>& octree) {
+bool OctomapEditor::removeCeiling(std::shared_ptr<OcTree_t>& octree) {
 
-  mrs_lib::ScopeTimer scope_timer("copy");
+  octree->expand();
 
-  scope_timer.checkpoint("copy to local var");
-
-  OcTree_t local_tree = *octree;
-
-  scope_timer.checkpoint("copy local map to octomap msg");
-
-  octomap_msgs::Octomap msg_tree;
-  octomap_msgs::binaryMapToMsg(local_tree, msg_tree);
-
-  scope_timer.checkpoint("msg to msg pointer");
-
-  octomap_msgs::OctomapConstPtr msg_tree_ptr = octomap_msgs::OctomapConstPtr(new octomap_msgs::Octomap(msg_tree));
-
-  scope_timer.checkpoint("copy msg to local map 1/2");
-
-  // callback( ... msg_tree_ptr) ...
-  //
-  std::shared_ptr<octomap::OcTree> local_tree_2;
-  {
-    mrs_lib::ScopeTimer scope_timer("mrs dealocator");
-
-    scope_timer.checkpoint("copy msg to local msg var");
-
-    octomap_msgs::Octomap local_octomap = *msg_tree_ptr;
-
-    scope_timer.checkpoint("local octomap msg to octree");
-
-    octomap::AbstractOcTree* local_tree_2_ptr = octomap_msgs::binaryMsgToMap(local_octomap);
-
-    scope_timer.checkpoint("copy msg to local map 2/2");
-
-    local_tree_2 = std::shared_ptr<octomap::OcTree>(dynamic_cast<octomap::OcTree*>(local_tree_2_ptr));
-  }
-
-  scope_timer.checkpoint("copy shared to shared");
-
-  octree = std::make_shared<octomap::OcTree>(*local_tree_2);
-
-  scope_timer.checkpoint("finished");
-
-  ROS_INFO("[OctomapEditor]: resolution change finished");
 
   return true;
 }

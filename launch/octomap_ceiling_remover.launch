@@ -2,9 +2,9 @@
 
   <arg name="LOGGER_DEBUG" default="$(optenv LOGGER_DEBUG false)" />
 
-  <arg name="UAV_NAME" default="uav22" />
-  <arg name="map_path" default="$(env HOME)/maps" />
-  <arg name="map_topic" default="/$(arg UAV_NAME)/octomap_binary" />
+  <arg name="UAV_NAME" default="uav23" />
+  <arg name="map_in_topic" default="/$(arg UAV_NAME)/octomap_full" />
+  <arg name="map_out_topic" default="/$(arg UAV_NAME)/octomap_full_filtered" />
 
   <env name="ROSCONSOLE_CONFIG_FILE" if="$(eval arg('LOGGER_DEBUG'))" value="$(find octomap_tools)/config/debug_verbosity.yaml" />
 
@@ -22,14 +22,15 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <node pkg="nodelet" type="nodelet" name="octomap_saver" args="$(arg nodelet) octomap_tools/OctomapSaver $(arg nodelet_manager)" output="screen">
+    <node pkg="nodelet" type="nodelet" name="ceiling_remover" args="$(arg nodelet) octomap_tools/OctomapCeilingRemover $(arg nodelet_manager)" output="screen">
 
-      <rosparam file="$(find octomap_tools)/config/octomap_saver.yaml" command="load" />
-
-      <param name="map_path" type="string" value="$(arg map_path)" />
+      <rosparam file="$(find octomap_tools)/config/octomap_ceiling_remover.yaml" command="load" />
 
       <!-- topics in -->
-      <remap from="~octomap_in" to="$(arg map_topic)" />
+      <remap from="~octomap_in" to="$(arg map_in_topic)" />
+
+      <!-- topics out -->
+      <remap from="~octomap_out" to="$(arg map_out_topic)" />
 
     </node>
 
