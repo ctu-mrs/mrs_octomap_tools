@@ -10,6 +10,9 @@
   <arg name="standalone" default="true" />
   <arg name="custom_config" default="" />
 
+  <arg name="filter" default="false" />
+  <arg name="remove_ceiling" default="false" />
+
   <arg name="node_name" default="octomap_rviz_visualizer" />
   <arg name="octomap_topic" default="octomap_server/octomap_full" />
 
@@ -29,6 +32,9 @@
       <rosparam file="$(find octomap_tools)/config/octomap_rviz_visualizer.yaml" command="load" />
 
       <rosparam if="$(eval not arg('custom_config') == '')" file="$(arg custom_config)" />
+
+      <param if="$(eval arg('filter'))" name="filter" value="true" />
+      <param if="$(eval arg('remove_ceiling'))" name="remove_ceiling" value="true" />
 
         <!-- topics in -->
 

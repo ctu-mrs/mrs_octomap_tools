@@ -1,6 +1,5 @@
 /* includes //{ */
 
-#include "octomap/AbstractOcTree.h"
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
 
@@ -25,6 +24,8 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/common/transforms.h>
+
+#include <octomap_tools/octomap_methods.h>
 
 //}
 
@@ -82,21 +83,23 @@ private:
   ros::Publisher pub_occupied_pc_;
   ros::Publisher pub_free_pc_;
 
-  double m_occupancyMinZ;
-  double m_occupancyMaxZ;
+  double _occupancy_min_z_;
+  double _occupancy_max_z_;
 
   static std_msgs::ColorRGBA heightMapColor(double h);
   double                     _occupancy_cube_size_factor_;
   double                     _free_cube_size_factor_;
 
-  bool                m_useColoredMap;
-  std_msgs::ColorRGBA m_color;
-  std_msgs::ColorRGBA m_colorFree;
-  double              m_colorFactor;
+  bool                _use_colored_map_;
+  std_msgs::ColorRGBA _color_;
+  std_msgs::ColorRGBA _color_free_;
+  double              _color_factor_;
 
-  bool m_useHeightMap;
+  bool _use_height_map_;
+  bool _publish_free_space_;
 
-  bool m_publishFreeSpace;
+  bool _filter_;
+  bool _remove_ceiling_;
 };
 
 //}
@@ -116,26 +119,29 @@ void OctomapRvizVisualizer::onInit() {
   param_loader.loadParam("occupied_throttled_rate", throttle_occupied_vis_);
   param_loader.loadParam("free_throttled_rate", throttle_free_vis_);
 
-  param_loader.loadParam("occupied/min_z", m_occupancyMinZ);
-  param_loader.loadParam("occupied/max_z", m_occupancyMaxZ);
+  param_loader.loadParam("occupied/min_z", _occupancy_min_z_);
+  param_loader.loadParam("occupied/max_z", _occupancy_max_z_);
   param_loader.loadParam("occupied/cube_size_factor", _occupancy_cube_size_factor_);
 
-  param_loader.loadParam("colored_map/enabled", m_useColoredMap);
+  param_loader.loadParam("colored_map/enabled", _use_colored_map_);
 
-  param_loader.loadParam("height_map/enabled", m_useHeightMap);
-  param_loader.loadParam("height_map/color_factor", m_colorFactor);
+  param_loader.loadParam("height_map/enabled", _use_height_map_);
+  param_loader.loadParam("height_map/color_factor", _color_factor_);
 
-  param_loader.loadParam("height_map/color/r", m_color.r);
-  param_loader.loadParam("height_map/color/g", m_color.g);
-  param_loader.loadParam("height_map/color/b", m_color.b);
-  param_loader.loadParam("height_map/color/a", m_color.a);
+  param_loader.loadParam("height_map/color/r", _color_.r);
+  param_loader.loadParam("height_map/color/g", _color_.g);
+  param_loader.loadParam("height_map/color/b", _color_.b);
+  param_loader.loadParam("height_map/color/a", _color_.a);
 
-  param_loader.loadParam("free_space/publish", m_publishFreeSpace);
+  param_loader.loadParam("free_space/publish", _publish_free_space_);
   param_loader.loadParam("free_space/cube_size_factor", _free_cube_size_factor_);
-  param_loader.loadParam("free_space/color/r", m_colorFree.r);
-  param_loader.loadParam("free_space/color/g", m_colorFree.g);
-  param_loader.loadParam("free_space/color/b", m_colorFree.b);
-  param_loader.loadParam("free_space/color/a", m_colorFree.a);
+  param_loader.loadParam("free_space/color/r", _color_free_.r);
+  param_loader.loadParam("free_space/color/g", _color_free_.g);
+  param_loader.loadParam("free_space/color/b", _color_free_.b);
+  param_loader.loadParam("free_space/color/a", _color_free_.a);
+
+  param_loader.loadParam("filter", _filter_);
+  param_loader.loadParam("remove_ceiling", _remove_ceiling_);
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[OctomapRvizVisualizer]: could not load all parameters");
@@ -156,13 +162,13 @@ void OctomapRvizVisualizer::onInit() {
 
   // | ---------------------- check params ---------------------- |
 
-  if (m_useHeightMap && m_useColoredMap) {
+  if (_use_height_map_ && _use_colored_map_) {
     std::string msg = std::string("You enabled both height map and RGBcolor registration.") + " This is contradictory. " + "Defaulting to height map.";
     ROS_WARN("[%s]: %s", ros::this_node::getName().c_str(), msg.c_str());
-    m_useColoredMap = false;
+    _use_colored_map_ = false;
   }
 
-  if (m_useColoredMap) {
+  if (_use_colored_map_) {
 #ifdef COLOR_OCTOMAP_SERVER
     ROS_WARN("[%s]: Using RGB color registration (if information available)", ros::this_node::getName().c_str());
 #else
@@ -224,7 +230,13 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
   octomap_msgs::OctomapConstPtr octomap = wrp.getMsg();
 
-  octomap::AbstractOcTree* tree_ptr = octomap_msgs::fullMsgToMap(*octomap);
+  octomap::AbstractOcTree* tree_ptr;
+
+  if (octomap->binary) {
+    tree_ptr = octomap_msgs::binaryMsgToMap(*octomap);
+  } else {
+    tree_ptr = octomap_msgs::fullMsgToMap(*octomap);
+  }
 
   if (!tree_ptr) {
     ROS_WARN_THROTTLE(1.0, "[OctomapRvizVisualizer]: octomap message is empty!");
@@ -232,6 +244,20 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
   }
 
   std::shared_ptr<octomap::OcTree> octree = std::shared_ptr<octomap::OcTree>(dynamic_cast<octomap::OcTree*>(tree_ptr));
+
+  bool is_expanded = false;
+
+  if (_filter_) {
+    filterSpecs(octree, is_expanded, 2);
+  }
+
+  if (_remove_ceiling_) {
+    removeCeiling(octree, is_expanded);
+  }
+
+  if (is_expanded) {
+    octree->prune();
+  }
 
   // init markers for free space:
   visualization_msgs::MarkerArray free_marker_array;
@@ -252,6 +278,25 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
   pcl::PointCloud<PCLPoint> occupied_pcl_cloud;
   pcl::PointCloud<PCLPoint> free_pcl_cloud;
 
+  double min_z_occupied = std::numeric_limits<double>::max();
+  double max_z_occupied = std::numeric_limits<double>::lowest();
+
+  for (auto it = octree->begin(), end = octree->end(); it != end; ++it) {
+
+    if (octree->isNodeOccupied(*it)) {
+
+      const double z = it.getZ();
+
+      if (z < min_z_occupied) {
+        min_z_occupied = z;
+      }
+
+      if (z > max_z_occupied) {
+        max_z_occupied = z;
+      }
+    }
+  }
+
   // now, traverse all leafs in the tree:
   for (auto it = octree->begin(tree_depth), end = octree->end(); it != end; ++it) {
 
@@ -267,7 +312,7 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
       if (occupied_subscribed || throttled_occupied_subscibed || pc_occupied_subscribed) {
 
-        if (z + half_size > m_occupancyMinZ && z - half_size < m_occupancyMaxZ) {
+        if (z + half_size > _occupancy_min_z_ && z - half_size < _occupancy_max_z_) {
 
           double x = it.getX();
           double y = it.getY();
@@ -288,13 +333,9 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
           occupied_marker_array.markers[idx].points.push_back(cubeCenter);
 
-          if (m_useHeightMap) {
+          if (_use_height_map_) {
 
-            double minX, minY, minZ, maxX, maxY, maxZ;
-            octree->getMetricMin(minX, minY, minZ);
-            octree->getMetricMax(maxX, maxY, maxZ);
-
-            double h = (1.0 - std::min(std::max((cubeCenter.z - minZ) / (maxZ - minZ), 0.0), 1.0)) * m_colorFactor;
+            double h = (1.0 - std::min(std::max((cubeCenter.z - min_z_occupied) / (max_z_occupied - min_z_occupied), 0.0), 1.0)) * _color_factor_;
             occupied_marker_array.markers[idx].colors.push_back(heightMapColor(h));
           }
 
@@ -338,11 +379,11 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
       double z         = it.getZ();
       double half_size = it.getSize() / 2.0;
 
-      if (z + half_size > m_occupancyMinZ && z - half_size < m_occupancyMaxZ) {
+      if (z + half_size > _occupancy_min_z_ && z - half_size < _occupancy_max_z_) {
 
         if (free_subscribed || throttled_free_subscibed) {
 
-          if (m_publishFreeSpace) {
+          if (_publish_free_space_) {
 
             double x = it.getX();
             double y = it.getY();
@@ -395,8 +436,8 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
       occupied_marker_array.markers[i].scale.y         = size * _occupancy_cube_size_factor_;
       occupied_marker_array.markers[i].scale.z         = size * _occupancy_cube_size_factor_;
 
-      if (!m_useColoredMap) {
-        occupied_marker_array.markers[i].color = m_color;
+      if (!_use_colored_map_) {
+        occupied_marker_array.markers[i].color = _color_;
       }
 
       if (occupied_marker_array.markers[i].points.size() > 0) {
@@ -441,7 +482,7 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
       free_marker_array.markers[i].scale.x         = size * _free_cube_size_factor_;
       free_marker_array.markers[i].scale.y         = size * _free_cube_size_factor_;
       free_marker_array.markers[i].scale.z         = size * _free_cube_size_factor_;
-      free_marker_array.markers[i].color           = m_colorFree;
+      free_marker_array.markers[i].color           = _color_free_;
 
       if (free_marker_array.markers[i].points.size() > 0)
         free_marker_array.markers[i].action = visualization_msgs::Marker::ADD;

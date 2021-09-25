@@ -1,6 +1,9 @@
 free_throttled_rate: 1.0 # [Hz]
 occupied_throttled_rate: 1.0 # [Hz]
 
+filter: false
+remove_ceiling: false
+
 occupied:
   cube_size_factor: 1.0
   min_z: -1.79769e+308

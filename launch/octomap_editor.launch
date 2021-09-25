@@ -49,6 +49,8 @@
     <arg name="debug" value="false" />
     <arg name="node_name" value="octomap_vis" />
     <arg name="octomap_topic" value="octomap_editor/octomap" />
+    <arg name="filter" value="false" />
+    <arg name="remove_ceiling" value="false" />
 
   </include>
 

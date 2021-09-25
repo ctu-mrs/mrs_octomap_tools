@@ -1,7 +1,8 @@
 map:
   # name: "organ_large.bt"
   # name: "default.ot"
-  name: "forest_my.ot"
+  # name: "forest_my.ot"
+  name: "finals.ot"
 
 roi_default:
 
