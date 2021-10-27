@@ -2,9 +2,23 @@
 
 This package contains a set of tools for OctoMap manipulation and visualization.
 
+## OctomapMethods
+
+A library with useful methods for manipulation and post-processing of OctoMap.
+
+## OctomapSaver
+
+A minimalistic node for saving an octomap from ROS topic.
+
 ## OctomapRvizVisualier
 
 A publisher of RVIZ markers for OctoMap visualization.
+It has some additional features over the original Octomap RVIZ plugin, e.g.:
+
+* the option to filter the octomap,
+* the option to remove ceiling from the octomap,
+* throttled publishers for saving of power,
+* power saving mode, when nobody subscribes to the markers.
 
 ## OctomapEditor
 
