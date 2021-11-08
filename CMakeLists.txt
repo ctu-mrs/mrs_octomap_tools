@@ -43,8 +43,8 @@ add_definitions(-DOCTOMAP_NODEBUGOUT)
 
 catkin_package(
   CATKIN_DEPENDS roscpp nodelet std_msgs mrs_lib visualization_msgs
-  LIBRARIES OctomapRvizVisualizer OctomapEditor OctomapSaver OctomapMethods
   DEPENDS OCTOMAP
+  LIBRARIES OctomapRvizVisualizer OctomapEditor OctomapSaver OctomapMethods
   )
 
 include_directories(
