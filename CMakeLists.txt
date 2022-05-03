@@ -42,6 +42,7 @@ find_package(octomap REQUIRED)
 add_definitions(-DOCTOMAP_NODEBUGOUT)
 
 catkin_package(
+  INCLUDE_DIRS include
   CATKIN_DEPENDS roscpp nodelet std_msgs mrs_lib visualization_msgs
   DEPENDS OCTOMAP
   LIBRARIES OctomapRvizVisualizer OctomapEditor OctomapSaver OctomapMethods
