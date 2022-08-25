@@ -14,6 +14,8 @@ else()
   message("Using custom-built PCL binaries. Inheriting all CMAKE_CXX_FLAGS from catkin workspace.")
 endif()
 
+add_definitions("-DOCTOMAP_NODEBUGOUT")
+
 find_package(catkin REQUIRED
   roscpp
   cmake_modules

@@ -479,9 +479,9 @@ bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new
 
       const unsigned int old_depth = it.getDepth();
 
-      octomap::OcTreeNode* orig_node = it.getNode();
+      /* octomap::OcTreeNode* orig_node = it.getNode(); */
 
-      octree->eatChildren(orig_node);
+      /* octree->eatChildren(orig_node); */
 
       if (old_depth >= max_depth) {
         max_depth = old_depth;
