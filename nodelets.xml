@@ -11,7 +11,13 @@
 </library>
 
 <library path="lib/libOctomapSaver">
-  <class name="octomap_tools/OctomapSaver" type="octomap_tools::octomap_saver::OctomapSaver" base_class_type="nodelet::Nodelet">
+  <class name="octomap_tools/OctomapSaver" type="OcTreeSaver" base_class_type="nodelet::Nodelet">
+    <description>OctomapSaver nodelet</description>
+  </class>
+</library>
+
+<library path="lib/libOctomapSaver">
+  <class name="octomap_tools/ColorOctomapSaver" type="ColorOcTreeSaver" base_class_type="nodelet::Nodelet">
     <description>OctomapSaver nodelet</description>
   </class>
 </library>
