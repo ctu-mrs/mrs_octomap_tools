@@ -5,6 +5,7 @@ namespace octomap_tools
 
 /* setInsideBBX() //{ */
 
+template <typename OcTree_t>
 bool setInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max, const bool state) {
 
   octomap::OcTreeKey min_key, max_key;
@@ -46,6 +47,7 @@ bool setInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_m
 
 /* setFreeAboveGround() //{ */
 
+template <typename OcTree_t>
 bool setFreeAboveGround(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max, const double height) {
 
   octomap::OcTreeKey min_key, max_key;
@@ -103,6 +105,7 @@ bool setFreeAboveGround(std::shared_ptr<OcTree_t>& octree, const octomap::point3
 
 /* setUnknownInsideBBX() //{ */
 
+template <typename OcTree_t>
 bool setUnknownInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
@@ -111,7 +114,7 @@ bool setUnknownInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point
     return false;
   }
 
-  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (typename OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     octomap::OcTreeKey   k    = it.getKey();
     octomap::OcTreeNode* node = octree->search(k);
@@ -119,7 +122,7 @@ bool setUnknownInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point
     expandNodeRecursive(octree, node, it.getDepth());
   }
 
-  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (typename OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     octree->deleteNode(it.getKey());
   }
@@ -132,6 +135,7 @@ bool setUnknownInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point
 /* pruneInBBX() //{ */
 
 // | -------------------- DONT USE TO SLOW -------------------- |
+template <typename OcTree_t>
 bool pruneInBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
@@ -164,6 +168,7 @@ bool pruneInBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min
 
 /* expandInBBX() //{ */
 
+template <typename OcTree_t>
 bool expandInBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
@@ -172,7 +177,7 @@ bool expandInBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_mi
     return false;
   }
 
-  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (typename OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     octomap::OcTreeKey   k    = it.getKey();
     octomap::OcTreeNode* node = octree->search(k);
@@ -188,6 +193,7 @@ bool expandInBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_mi
 /* removeFreeInsideBBX() //{ */
 
 // BUGGY
+template <typename OcTree_t>
 bool removeFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
@@ -196,7 +202,7 @@ bool removeFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point
     return false;
   }
 
-  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (typename OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     octomap::OcTreeKey   k    = it.getKey();
     octomap::OcTreeNode* node = octree->search(k);
@@ -204,7 +210,7 @@ bool removeFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point
     expandNodeRecursive(octree, node, it.getDepth());
   }
 
-  for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+  for (typename OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
     auto key  = it.getKey();
     auto node = octree->search(key);
@@ -223,6 +229,7 @@ bool removeFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point
 
 /* setUnknownToFreeInsideBBX() //{ */
 
+template <typename OcTree_t>
 bool setUnknownToFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey min_key, max_key;
@@ -263,6 +270,7 @@ bool setUnknownToFreeInsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap:
 
 /* pruneNodeRecursive() //{ */
 
+template <typename OcTree_t>
 void pruneNodeRecursive(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const unsigned int node_depth) {
 
   if (node_depth < octree->getTreeDepth()) {
@@ -288,6 +296,7 @@ void pruneNodeRecursive(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* 
 
 /* clearOutsideBBX() //{ */
 
+template <typename OcTree_t>
 bool clearOutsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   octomap::OcTreeKey minKey, maxKey;
@@ -300,7 +309,7 @@ bool clearOutsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& 
 
   std::vector<std::pair<octomap::OcTreeKey, unsigned int>> keys;
 
-  for (OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
+  for (typename OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
 
     // check if outside of bbx:
     octomap::OcTreeKey k = it.getKey();
@@ -323,6 +332,7 @@ bool clearOutsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& 
 
 /* setResolution() //{ */
 
+template <typename OcTree_t>
 bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution) {
 
   octree->expand();
@@ -396,7 +406,7 @@ bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution) {
           float avg_value = 0;
           int   n_nodes   = 0;
 
-          for (OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
+          for (typename OcTree_t::leaf_bbx_iterator it = octree->begin_leafs_bbx(p_min, p_max), end = octree->end_leafs_bbx(); it != end; ++it) {
 
             octomap::OcTreeKey   k    = it.getKey();
             octomap::OcTreeNode* node = octree->search(k);
@@ -433,6 +443,7 @@ bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution) {
 
 /* refractor() //{ */
 
+template <typename OcTree_t>
 bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new_resolution) {
 
   mrs_lib::ScopeTimer timer("refractor");
@@ -471,7 +482,7 @@ bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new
 
   if (fractor >= 0) {
 
-    for (OcTree_t::leaf_iterator it = octree->begin_leafs(octree->getTreeDepth() - fractor), end = octree->end_leafs(); it != end; ++it) {
+    for (typename OcTree_t::leaf_iterator it = octree->begin_leafs(octree->getTreeDepth() - fractor), end = octree->end_leafs(); it != end; ++it) {
 
       cell_count++;
 
@@ -516,7 +527,7 @@ bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new
     }
   } else {
 
-    for (OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
+    for (typename OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
 
       cell_count++;
 
@@ -550,6 +561,7 @@ bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new
 
 /* removeCeiling() //{ */
 
+template <typename OcTree_t>
 void removeCeiling(std::shared_ptr<OcTree_t>& octree, bool &is_expanded) {
 
   if (!is_expanded) {
@@ -561,7 +573,7 @@ void removeCeiling(std::shared_ptr<OcTree_t>& octree, bool &is_expanded) {
 
   octomap::KeySet keys_to_remove;
 
-  for (OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
+  for (typename OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
 
     if (!isCeilTopKey(octree, is_expanded, it.getKey())) {
       continue;
@@ -618,6 +630,7 @@ void removeCeiling(std::shared_ptr<OcTree_t>& octree, bool &is_expanded) {
 
 /* isCeilTopKey() //{ */
 
+template <typename OcTree_t>
 bool isCeilTopKey(std::shared_ptr<OcTree_t>& octree, bool& is_expanded, const octomap::OcTreeKey key) {
 
   if (!is_expanded) {
@@ -655,6 +668,7 @@ bool isCeilTopKey(std::shared_ptr<OcTree_t>& octree, bool& is_expanded, const oc
 
 /* filterSpecs() //{ */
 
+template <typename OcTree_t>
 bool filterSpecs(std::shared_ptr<OcTree_t>& octree, bool &is_expanded, const int spec_size) {
 
   if (!is_expanded) {
@@ -664,7 +678,7 @@ bool filterSpecs(std::shared_ptr<OcTree_t>& octree, bool &is_expanded, const int
   octomap::KeySet keys_to_delete;
   octomap::KeySet touched_keys;
 
-  for (OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
+  for (typename OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
 
     if (touched_keys.find(it.getKey()) != touched_keys.end()) {
       continue;
@@ -692,6 +706,7 @@ bool filterSpecs(std::shared_ptr<OcTree_t>& octree, bool &is_expanded, const int
 
 /* clear() //{ */
 
+template <typename OcTree_t>
 bool clear(std::shared_ptr<OcTree_t>& octree) {
 
   mrs_lib::ScopeTimer scope_timer("clear");
@@ -705,6 +720,7 @@ bool clear(std::shared_ptr<OcTree_t>& octree) {
 
 /* translateMap() //{ */
 
+template <typename OcTree_t>
 bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const double& y, const double& z) {
 
   ROS_INFO("[OctomapServer]: translating map by %.2f, %.2f, %.2f", x, y, z);
@@ -718,7 +734,7 @@ bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const doub
   octree_new->setClampingThresMin(octree->getClampingThresMin());
   octree_new->setClampingThresMax(octree->getClampingThresMax());
 
-  for (OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
+  for (typename OcTree_t::leaf_iterator it = octree->begin_leafs(), end = octree->end_leafs(); it != end; ++it) {
 
     auto coords = it.getCoordinate();
 
@@ -748,6 +764,7 @@ bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const doub
 /* copyInsideBBX() //{ */
 
 // SLOW AND DEPRICATED
+template <typename OcTree_t>
 bool copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   mrs_lib::ScopeTimer scope_time("copyInsideBBX()");
@@ -758,7 +775,7 @@ bool copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& t
     return false;
   }
 
-  for (OcTree_t::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
+  for (typename OcTree_t::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
 
     octomap::OcTreeKey   k    = it.getKey();
     octomap::OcTreeNode* node = from->search(k);
@@ -766,7 +783,7 @@ bool copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& t
     expandNodeRecursive(from, node, it.getDepth());
   }
 
-  for (OcTree_t::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
+  for (typename OcTree_t::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
 
     to->setNodeValue(it.getKey(), it->getValue());
   }
@@ -778,6 +795,7 @@ bool copyInsideBBX(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& t
 
 /* copyInsideBBX2() //{ */
 
+template <typename OcTree_t>
 bool copyInsideBBX2(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   mrs_lib::ScopeTimer scope_time("copyInsideBBX2()");
@@ -797,7 +815,7 @@ bool copyInsideBBX2(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& 
     to->setNodeValue(key, 1.0);
   }
 
-  for (OcTree_t::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
+  for (typename OcTree_t::leaf_bbx_iterator it = from->begin_leafs_bbx(p_min, p_max), end = from->end_leafs_bbx(); it != end; ++it) {
 
     octomap::OcTreeKey   k    = it.getKey();
     octomap::OcTreeNode* node = touchNode(to, k, it.getDepth());
@@ -816,7 +834,8 @@ bool copyInsideBBX2(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& 
 
 /* touchNode() //{ */
 
-octomap::OcTreeNode* touchNode(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, unsigned int target_depth = 0) {
+template <typename OcTree_t>
+octomap::OcTreeNode* touchNode(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, unsigned int target_depth) {
 
   octomap::OcTreeNode* root = octree->getRoot();
 
@@ -836,8 +855,9 @@ octomap::OcTreeNode* touchNode(std::shared_ptr<OcTree_t>& octree, const octomap:
 
 /* touchNodeRecurs() //{ */
 
+template <typename OcTree_t>
 octomap::OcTreeNode* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const octomap::OcTreeKey& key, unsigned int depth,
-                                     unsigned int max_depth = 0) {
+                                     unsigned int max_depth) {
 
   assert(node);
 
@@ -866,6 +886,7 @@ octomap::OcTreeNode* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, octomap:
 
 /* morphologyOperation() //{ */
 
+template <typename OcTree_t>
 bool morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operation, const octomap::point3d& p_min, const octomap::point3d& p_max) {
 
   expandInBBX(octree, p_min, p_max);
@@ -975,6 +996,7 @@ bool morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operati
 
 /* getClusters() //{ */
 
+template <typename OcTree_t>
 bool getCluster(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, octomap::KeySet& visited, octomap::KeySet& touched, const int max_size) {
 
   auto node = octree->search(key);
@@ -995,6 +1017,7 @@ bool getCluster(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key
 
 /* getClustersRecurs() //{ */
 
+template <typename OcTree_t>
 bool getClusterRecurs(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, octomap::KeySet& visited, octomap::KeySet& touched, int& cluster_size,
                       const int max_size) {
 
@@ -1060,6 +1083,7 @@ bool getClusterRecurs(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKe
 
 /* getNeighborKeys() //{ */
 
+template <typename OcTree_t>
 std::vector<octomap::OcTreeKey> getNeighborhood(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key) {
 
   std::vector<octomap::OcTreeKey> neighbors;
@@ -1078,6 +1102,7 @@ std::vector<octomap::OcTreeKey> getNeighborhood(std::shared_ptr<OcTree_t>& octre
 
 /* getKeyInDir() //{ */
 
+template <typename OcTree_t>
 octomap::OcTreeKey getKeyInDir(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, const std::vector<int>& direction) {
 
   octomap::OcTreeKey k;
@@ -1093,6 +1118,7 @@ octomap::OcTreeKey getKeyInDir(std::shared_ptr<OcTree_t>& octree, const octomap:
 
 /* expandNodeRecursive() //{ */
 
+template <typename OcTree_t>
 void expandNodeRecursive(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode* node, const unsigned int node_depth) {
 
   if (node_depth < octree->getTreeDepth()) {

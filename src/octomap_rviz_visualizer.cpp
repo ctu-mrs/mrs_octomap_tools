@@ -4,6 +4,7 @@
 #include <nodelet/nodelet.h>
 
 #include <octomap/OcTree.h>
+#include <octomap/ColorOcTree.h>
 #include <octomap_msgs/Octomap.h>
 #include <octomap_msgs/conversions.h>
 
@@ -37,20 +38,21 @@ namespace octomap_rviz_visualizer
 
 /* using //{ */
 
-#ifdef COLOR_OCTOMAP_SERVER
-using PCLPoint      = pcl::PointXYZRGB;
-using PCLPointCloud = pcl::PointCloud<PCLPoint>;
-using OcTreeT       = octomap::ColorOcTree;
-#else
+/* #ifdef COLOR_OCTOMAP_SERVER */
+/* using PCLPoint      = pcl::PointXYZRGB; */
+/* using PCLPointCloud = pcl::PointCloud<PCLPoint>; */
+/* using OcTree_t       = octomap::ColorOcTree; */
+/* #else */
 using PCLPoint      = pcl::PointXYZ;
 using PCLPointCloud = pcl::PointCloud<PCLPoint>;
-using OcTreeT       = octomap::OcTree;
-#endif
+/* using OcTree_t       = OcTree_t; */
+/* #endif */
 
 //}
 
 /* class OctomapRvizVisualizer //{ */
 
+template <typename OcTree_t>
 class OctomapRvizVisualizer : public nodelet::Nodelet {
 
 public:
@@ -106,7 +108,8 @@ private:
 
 /* onInit() //{ */
 
-void OctomapRvizVisualizer::onInit() {
+template <typename OcTree_t>
+void OctomapRvizVisualizer<OcTree_t>::onInit() {
 
   nh_ = nodelet::Nodelet::getMTPrivateNodeHandle();
 
@@ -207,7 +210,8 @@ void OctomapRvizVisualizer::onInit() {
 
 /* callbackOctomap() //{ */
 
-void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octomap>& wrp) {
+template <typename OcTree_t>
+void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octomap>& wrp) {
 
   if (!is_initialized_) {
     return;
@@ -243,7 +247,7 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
     return;
   }
 
-  std::shared_ptr<octomap::OcTree> octree = std::shared_ptr<octomap::OcTree>(dynamic_cast<octomap::OcTree*>(tree_ptr));
+  std::shared_ptr<OcTree_t> octree = std::shared_ptr<OcTree_t>(dynamic_cast<OcTree_t*>(tree_ptr));
 
   bool is_expanded = false;
 
@@ -544,7 +548,8 @@ void OctomapRvizVisualizer::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
 /* heightMapColor() //{ */
 
-std_msgs::ColorRGBA OctomapRvizVisualizer::heightMapColor(double h) {
+template <typename OcTree_t>
+std_msgs::ColorRGBA OctomapRvizVisualizer<OcTree_t>::heightMapColor(double h) {
 
   std_msgs::ColorRGBA color;
 
@@ -615,4 +620,12 @@ std_msgs::ColorRGBA OctomapRvizVisualizer::heightMapColor(double h) {
 }  // namespace octomap_tools
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer, nodelet::Nodelet)
+
+typedef octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::OcTree> OcTreeVisualizer;
+typedef octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::ColorOcTree> ColorOcTreeVisualizer;
+
+/* PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_saver::OctomapSaver, nodelet::Nodelet) */
+PLUGINLIB_EXPORT_CLASS(OcTreeVisualizer, nodelet::Nodelet)
+PLUGINLIB_EXPORT_CLASS(ColorOcTreeVisualizer, nodelet::Nodelet)
+
+/* PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer, nodelet::Nodelet) */

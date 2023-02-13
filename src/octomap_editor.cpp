@@ -7,6 +7,7 @@
 #include <octomap_tools/octomap_methods.h>
 
 #include <octomap/OcTree.h>
+#include <octomap/ColorOcTree.h>
 #include <octomap_msgs/Octomap.h>
 #include <octomap_msgs/conversions.h>
 #include <octomap/AbstractOcTree.h>
@@ -38,12 +39,13 @@ namespace octomap_rviz_visualizer
 
 /* defines //{ */
 
-using OcTree_t = octomap::OcTree;
+/* using OcTree_t = octomap::OcTree; */
 
 //}
 
 /* class OctomapEditor //{ */
 
+template <typename OcTree_t>
 class OctomapEditor : public nodelet::Nodelet {
 
 public:
@@ -113,7 +115,8 @@ private:
 
 /* onInit() //{ */
 
-void OctomapEditor::onInit() {
+template <typename OcTree_t>
+void OctomapEditor<OcTree_t>::onInit() {
 
   nh_ = nodelet::Nodelet::getMTPrivateNodeHandle();
 
@@ -247,7 +250,8 @@ void OctomapEditor::onInit() {
 
 /* callbackDrs() //{ */
 
-void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[maybe_unused]] uint32_t level) {
+template <typename OcTree_t>
+void OctomapEditor<OcTree_t>::callbackDrs(octomap_tools::octomap_editorConfig& params, [[maybe_unused]] uint32_t level) {
 
   if (!is_initialized_) {
     return;
@@ -922,7 +926,8 @@ void OctomapEditor::callbackDrs(octomap_tools::octomap_editorConfig& params, [[m
 
 /* timerMain() //{ */
 
-void OctomapEditor::timerMain([[maybe_unused]] const ros::TimerEvent& evt) {
+template <typename OcTree_t>
+void OctomapEditor<OcTree_t>::timerMain([[maybe_unused]] const ros::TimerEvent& evt) {
 
   if (!is_initialized_) {
     return;
@@ -946,7 +951,8 @@ void OctomapEditor::timerMain([[maybe_unused]] const ros::TimerEvent& evt) {
 
 /* loadFromFile() //{ */
 
-bool OctomapEditor::loadFromFile(const std::string& filename) {
+template <typename OcTree_t>
+bool OctomapEditor<OcTree_t>::loadFromFile(const std::string& filename) {
 
   std::string file_path = _map_path_ + "/" + filename;
 
@@ -960,7 +966,15 @@ bool OctomapEditor::loadFromFile(const std::string& filename) {
 
     if (suffix == ".bt") {
 
-      OcTree_t* tree = new octomap::OcTree(file_path);
+      OcTree_t* tree = new OcTree_t(1.0);
+
+      bool tree_read = tree->readBinary(file_path);
+      /* OcTree_t* tree = new OcTree_t(file_path); */
+
+      if (!tree_read) {
+        ROS_ERROR("[OctomapEditor]: could not read binary OcTree file");
+        return false;
+      }
 
       octree_ = std::shared_ptr<OcTree_t>(tree);
 
@@ -968,6 +982,20 @@ bool OctomapEditor::loadFromFile(const std::string& filename) {
         ROS_ERROR("[OctomapEditor]: could not read OcTree file");
         return false;
       }
+
+      /* auto tree = OcTree_t::readBinary(file_path); */
+
+      /* if (!tree) { */
+      /*   return false; */
+      /* } */
+
+      /* OcTree_t* OcTree = dynamic_cast<OcTree_t*>(tree); */
+      /* octree_          = std::shared_ptr<OcTree_t>(OcTree); */
+
+      /* if (!octree_) { */
+      /*   ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
+      /*   return false; */
+      /* } */
 
     } else if (suffix == ".ot") {
 
@@ -995,11 +1023,106 @@ bool OctomapEditor::loadFromFile(const std::string& filename) {
   return true;
 }
 
+/* template <> */
+/* bool OctomapEditor<octomap::OcTree>::loadFromFile(const std::string& filename) { */
+
+/*   std::string file_path = _map_path_ + "/" + filename; */
+
+/*   { */
+/*     std::scoped_lock lock(mutex_octree_); */
+
+/*     if (file_path.length() <= 3) */
+/*       return false; */
+
+/*     std::string suffix = file_path.substr(file_path.length() - 3, 3); */
+
+/*     if (suffix == ".bt") { */
+
+/*       octomap::OcTree* tree = new octomap::OcTree(file_path); */
+/*       /1* octomap::OcTree* tree = new octomap::OcTree(file_path); *1/ */
+
+/*       octree_ = std::shared_ptr<octomap::OcTree>(tree); */
+
+/*       if (!octree_) { */
+/*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
+/*         return false; */
+/*       } */
+
+/*     } else if (suffix == ".ot") { */
+
+/*       auto tree = octomap::AbstractOcTree::read(file_path); */
+
+/*       if (!tree) { */
+/*         return false; */
+/*       } */
+
+/*       octomap::OcTree* OcTree = dynamic_cast<octomap::OcTree*>(tree); */
+/*       octree_          = std::shared_ptr<octomap::OcTree>(OcTree); */
+
+/*       if (!octree_) { */
+/*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
+/*         return false; */
+/*       } */
+
+/*     } else { */
+/*       return false; */
+/*     } */
+
+/*     octree_resolution_ = octree_->getResolution(); */
+/*   } */
+
+/*   return true; */
+/* } */
+
+/* template <> */
+/* bool OctomapEditor<octomap::ColorOcTree>::loadFromFile(const std::string& filename) { */
+
+/*   std::string file_path = _map_path_ + "/" + filename; */
+
+/*   { */
+/*     std::scoped_lock lock(mutex_octree_); */
+
+/*     if (file_path.length() <= 3) */
+/*       return false; */
+
+/*     std::string suffix = file_path.substr(file_path.length() - 3, 3); */
+
+/*     if (suffix == ".bt") { */
+
+/*       ROS_ERROR("[OctomapEditor]: Cannot read .bt ColorOcTree file"); */
+
+/*     } else if (suffix == ".ot") { */
+
+/*       auto tree = octomap::AbstractOcTree::read(file_path); */
+
+/*       if (!tree) { */
+/*         return false; */
+/*       } */
+
+/*       octomap::ColorOcTree* OcTree = dynamic_cast<octomap::ColorOcTree*>(tree); */
+/*       octree_          = std::shared_ptr<octomap::ColorOcTree>(OcTree); */
+
+/*       if (!octree_) { */
+/*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
+/*         return false; */
+/*       } */
+
+/*     } else { */
+/*       return false; */
+/*     } */
+
+/*     octree_resolution_ = octree_->getResolution(); */
+/*   } */
+
+/*   return true; */
+/* } */
+
 //}
 
 /* saveToFile() //{ */
 
-bool OctomapEditor::saveToFile(const std::string& filename) {
+template <typename OcTree_t>
+bool OctomapEditor<OcTree_t>::saveToFile(const std::string& filename) {
 
   std::scoped_lock lock(mutex_octree_);
 
@@ -1035,7 +1158,8 @@ bool OctomapEditor::saveToFile(const std::string& filename) {
 
 /* publishMap() //{ */
 
-void OctomapEditor::publishMap(void) {
+template <typename OcTree_t>
+void OctomapEditor<OcTree_t>::publishMap(void) {
 
   std::scoped_lock lock(mutex_octree_);
 
@@ -1056,7 +1180,8 @@ void OctomapEditor::publishMap(void) {
 
 /* publishMarkers() //{ */
 
-void OctomapEditor::publishMarkers(void) {
+template <typename OcTree_t>
+void OctomapEditor<OcTree_t>::publishMarkers(void) {
 
   auto params = mrs_lib::get_mutexed(mutex_params_, params_);
 
@@ -1276,7 +1401,8 @@ void OctomapEditor::publishMarkers(void) {
 
 /* publishTf() //{ */
 
-void OctomapEditor::publishTf(void) {
+template <typename OcTree_t>
+void OctomapEditor<OcTree_t>::publishTf(void) {
 
   auto params = mrs_lib::get_mutexed(mutex_params_, params_);
 
@@ -1303,7 +1429,8 @@ void OctomapEditor::publishTf(void) {
 
 /* undo() //{ */
 
-void OctomapEditor::undo(void) {
+template <typename OcTree_t>
+void OctomapEditor<OcTree_t>::undo(void) {
 
   if (undoo_list_.size() > 0) {
 
@@ -1325,7 +1452,8 @@ void OctomapEditor::undo(void) {
 
 /* saveToUndoList() //{ */
 
-void OctomapEditor::saveToUndoList(void) {
+template <typename OcTree_t>
+void OctomapEditor<OcTree_t>::saveToUndoList(void) {
 
   std::scoped_lock lock(mutex_octree_);
 
@@ -1341,4 +1469,12 @@ void OctomapEditor::saveToUndoList(void) {
 }  // namespace octomap_tools
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_rviz_visualizer::OctomapEditor, nodelet::Nodelet)
+
+typedef octomap_tools::octomap_rviz_visualizer::OctomapEditor<octomap::OcTree> OcTreeEditor;
+typedef octomap_tools::octomap_rviz_visualizer::OctomapEditor<octomap::ColorOcTree> ColorOcTreeEditor;
+
+
+/* PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_rviz_visualizer::OctomapEditor, nodelet::Nodelet) */
+
+PLUGINLIB_EXPORT_CLASS(OcTreeEditor, nodelet::Nodelet)
+PLUGINLIB_EXPORT_CLASS(ColorOcTreeEditor, nodelet::Nodelet)

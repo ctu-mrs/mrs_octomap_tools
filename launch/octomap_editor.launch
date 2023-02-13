@@ -11,6 +11,9 @@
   <arg name="custom_config" default="" />
 
   <arg name="map_path" default="$(env HOME)/maps" />
+  <arg name="octree_type" default="octree" />
+  <arg if="$(eval arg('octree_type') == 'octree')" name="class_name" value="octomap_tools/OctomapEditor" />
+  <arg if="$(eval arg('octree_type') == 'color_octree')" name="class_name" value="octomap_tools/ColorOctomapEditor" />
 
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch" />
   <arg unless="$(arg debug)" name="launch_prefix" value="" />
@@ -25,7 +28,7 @@
       <param name="num_worker_threads" value="4" />
     </node>
 
-    <node pkg="nodelet" type="nodelet" name="octomap_editor" args="$(arg nodelet) octomap_tools/OctomapEditor $(arg nodelet_manager)" output="screen">
+    <node pkg="nodelet" type="nodelet" name="octomap_editor" args="$(arg nodelet) $(arg class_name) $(arg nodelet_manager)" output="screen">
 
       <rosparam file="$(find octomap_tools)/config/octomap_editor.yaml" command="load" />
 

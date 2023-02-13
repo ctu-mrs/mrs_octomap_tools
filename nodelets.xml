@@ -1,11 +1,23 @@
 <library path="lib/libOctomapRvizVisualizer">
-  <class name="octomap_tools/OctomapRvizVisualizer" type="octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer" base_class_type="nodelet::Nodelet">
+  <class name="octomap_tools/OctomapRvizVisualizer" type="OcTreeVisualizer" base_class_type="nodelet::Nodelet">
+    <description>OctomapRvizVisualizer nodelet</description>
+  </class>
+</library>
+
+<library path="lib/libOctomapRvizVisualizer">
+  <class name="octomap_tools/ColorOctomapRvizVisualizer" type="ColorOcTreeVisualizer" base_class_type="nodelet::Nodelet">
     <description>OctomapRvizVisualizer nodelet</description>
   </class>
 </library>
 
 <library path="lib/libOctomapEditor">
-  <class name="octomap_tools/OctomapEditor" type="octomap_tools::octomap_rviz_visualizer::OctomapEditor" base_class_type="nodelet::Nodelet">
+  <class name="octomap_tools/OctomapEditor" type="OcTreeEditor" base_class_type="nodelet::Nodelet">
+    <description>OctomapEditor nodelet</description>
+  </class>
+</library>
+
+<library path="lib/libOctomapEditor">
+  <class name="octomap_tools/ColorOctomapEditor" type="ColorOcTreeEditor" base_class_type="nodelet::Nodelet">
     <description>OctomapEditor nodelet</description>
   </class>
 </library>

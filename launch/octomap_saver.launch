@@ -6,6 +6,8 @@
   <arg name="map_path" default="$(env HOME)/maps" />
   <arg name="map_topic" default="/$(arg UAV_NAME)/octomap_server/octomap_global_binary" />
   <arg name="octree_type" default="octree" />
+  <arg if="$(eval arg('octree_type') == 'octree')" name="class_name" value="octomap_tools/OctomapSaver" />
+  <arg if="$(eval arg('octree_type') == 'color_octree')" name="class_name" value="octomap_tools/ColorOctomapSaver" />
 
   <env name="ROSCONSOLE_CONFIG_FILE" if="$(eval arg('LOGGER_DEBUG'))" value="$(find octomap_tools)/config/debug_verbosity.yaml" />
 
@@ -23,18 +25,7 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <node if="$(eval arg('octree_type') == 'octree')" pkg="nodelet" type="nodelet" name="octomap_saver" args="$(arg nodelet) octomap_tools/OctomapSaver $(arg nodelet_manager)" output="screen">
-
-      <rosparam file="$(find octomap_tools)/config/octomap_saver.yaml" command="load" />
-
-      <param name="map_path" type="string" value="$(arg map_path)" />
-
-      <!-- topics in -->
-      <remap from="~octomap_in" to="$(arg map_topic)" />
-
-    </node>
-
-    <node if="$(eval arg('octree_type') == 'color_octree')" pkg="nodelet" type="nodelet" name="octomap_saver" args="$(arg nodelet) octomap_tools/ColorOctomapSaver $(arg nodelet_manager)" output="screen">
+    <node pkg="nodelet" type="nodelet" name="octomap_saver" args="$(arg nodelet) $(arg class_name) $(arg nodelet_manager)" output="screen">
 
       <rosparam file="$(find octomap_tools)/config/octomap_saver.yaml" command="load" />
 

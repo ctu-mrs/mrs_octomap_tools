@@ -16,6 +16,10 @@
   <arg name="node_name" default="octomap_rviz_visualizer" />
   <arg name="octomap_topic" default="octomap_server/octomap_full" />
 
+  <arg name="octree_type" default="octree" />
+  <arg if="$(eval arg('octree_type') == 'octree')" name="class_name" value="octomap_tools/OctomapRvizVisualizer" />
+  <arg if="$(eval arg('octree_type') == 'color_octree')" name="class_name" value="octomap_tools/ColorOctomapRvizVisualizer" />
+
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch" />
   <arg unless="$(arg debug)" name="launch_prefix" value="" />
 
@@ -27,7 +31,7 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <node pkg="nodelet" type="nodelet" name="$(arg node_name)" args="$(arg nodelet) octomap_tools/OctomapRvizVisualizer $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
+    <node pkg="nodelet" type="nodelet" name="$(arg node_name)" args="$(arg nodelet) $(arg class_name) $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
 
       <rosparam file="$(find octomap_tools)/config/octomap_rviz_visualizer.yaml" command="load" />
 
