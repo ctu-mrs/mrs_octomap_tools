@@ -89,8 +89,10 @@ private:
   double _occupancy_max_z_;
 
   static std_msgs::ColorRGBA heightMapColor(double h);
-  double                     _occupancy_cube_size_factor_;
-  double                     _free_cube_size_factor_;
+  bool                       getColor(typename OcTree_t::NodeType& node, std_msgs::ColorRGBA& color_out);
+
+  double _occupancy_cube_size_factor_;
+  double _free_cube_size_factor_;
 
   bool                _use_colored_map_;
   std_msgs::ColorRGBA _color_;
@@ -172,13 +174,18 @@ void OctomapRvizVisualizer<OcTree_t>::onInit() {
   }
 
   if (_use_colored_map_) {
-#ifdef COLOR_OCTOMAP_SERVER
-    ROS_WARN("[%s]: Using RGB color registration (if information available)", ros::this_node::getName().c_str());
-#else
-    std::string msg = std::string("Colored map requested in launch file") + " - node not running/compiled to support colors, " +
-                      "please define COLOR_OCTOMAP_SERVER and recompile or launch " + "the octomap_color_server node";
-    ROS_WARN("[%s]: %s", ros::this_node::getName().c_str(), msg.c_str());
-#endif
+    if (checkType<OcTree_t>("ColorOcTree")) {
+      ROS_WARN("[%s]: Using RGB color registration (if information available)", ros::this_node::getName().c_str());
+    } else {
+      ROS_WARN("[%s]: Colored map requested, but this node does not support colors. Change octree_type in launch file.", ros::this_node::getName().c_str());
+    }
+    /* #ifdef COLOR_OCTOMAP_SERVER */
+    /*     ROS_WARN("[%s]: Using RGB color registration (if information available)", ros::this_node::getName().c_str()); */
+    /* #else */
+    /*     std::string msg = std::string("Colored map requested in launch file") + " - node not running/compiled to support colors, " + */
+    /*                       "please define COLOR_OCTOMAP_SERVER and recompile or launch " + "the octomap_color_server node"; */
+    /*     ROS_WARN("[%s]: %s", ros::this_node::getName().c_str(), msg.c_str()); */
+    /* #endif */
   }
 
   // | ----------------------- subscribers ---------------------- |
@@ -234,7 +241,7 @@ void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<
 
   octomap_msgs::OctomapConstPtr octomap = wrp.getMsg();
 
-  if(!checkType<OcTree_t>(octomap->id)){
+  if (!checkType<OcTree_t>(octomap->id)) {
     ROS_ERROR_THROTTLE(2.0, "Wrong octomap type. Change octree_type parameter.");
     /* setStatusStd(StatusProperty::Error, "Message", "Wrong octomap type. Use a different display type."); */
     return;
@@ -327,11 +334,9 @@ void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<
           double x = it.getX();
           double y = it.getY();
 
-#ifdef COLOR_OCTOMAP_SERVER
-          int r = it->getColor().r;
-          int g = it->getColor().g;
-          int b = it->getColor().b;
-#endif
+          std_msgs::ColorRGBA color;
+          color.a = 1.0;
+          bool got_color = getColor(*it, color);
 
           unsigned idx = it.getDepth();
           assert(idx < occupied_marker_array.markers.size());
@@ -349,32 +354,23 @@ void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<
             occupied_marker_array.markers[idx].colors.push_back(heightMapColor(h));
           }
 
-#ifdef COLOR_OCTOMAP_SERVER
-          if (m_useColoredMap) {
-            // TODO
-            // potentially use occupancy as measure for alpha channel?
-            std_msgs::msg::ColorRGBA _color;
-            _color.r = (r / 255.);
-            _color.g = (g / 255.);
-            _color.b = (b / 255.);
-            _color.a = 1.0;
-            occupied_marker_array.markers[idx].colors.push_back(_color);
+          if (_use_colored_map_ && got_color) {
+            occupied_marker_array.markers[idx].colors.push_back(color);
           }
-#endif
 
           if (pc_occupied_subscribed) {
-#ifdef COLOR_OCTOMAP_SERVER
-            PCLPoint _point = PCLPoint();
-            _point.x        = x;
-            _point.y        = y;
-            _point.z        = z;
-            _point.r        = r;
-            _point.g        = g;
-            _point.b        = b;
-            occupied_pclCloud.push_back(_point);
-#else
+/* #ifdef COLOR_OCTOMAP_SERVER */
+/*             PCLPoint _point = PCLPoint(); */
+/*             _point.x        = x; */
+/*             _point.y        = y; */
+/*             _point.z        = z; */
+/*             _point.r        = r; */
+/*             _point.g        = g; */
+/*             _point.b        = b; */
+/*             occupied_pclCloud.push_back(_point); */
+/* #else */
             occupied_pcl_cloud.push_back(PCLPoint(float(x), float(y), float(z)));
-#endif
+/* #endif */
           }
         }
       }
@@ -621,16 +617,33 @@ std_msgs::ColorRGBA OctomapRvizVisualizer<OcTree_t>::heightMapColor(double h) {
 
 //}
 
+/* getColor() */ /*//{*/
+template <typename OcTree_t>
+bool OctomapRvizVisualizer<OcTree_t>::getColor(typename OcTree_t::NodeType& node, std_msgs::ColorRGBA& color_out) {
+  /* ROS_WARN_THROTTLE(2.0, "[Octomap_rviz_visualizer]: Cannot get color."); */
+  return false;
+}
+
+template <>
+bool OctomapRvizVisualizer<octomap::ColorOcTree>::getColor(octomap::ColorOcTree::NodeType& node, std_msgs::ColorRGBA& color_out) {
+  octomap::ColorOcTreeNode::Color& color = node.getColor();
+  color_out.r                            = color.r / 255.;
+  color_out.g                            = color.g / 255.;
+  color_out.b                            = color.b / 255.;
+  return true;
+}
+
+/*//}*/
+
 }  // namespace octomap_rviz_visualizer
 
 }  // namespace octomap_tools
 
 #include <pluginlib/class_list_macros.h>
 
-typedef octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::OcTree> OcTreeVisualizer;
+typedef octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::OcTree>      OcTreeVisualizer;
 typedef octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::ColorOcTree> ColorOcTreeVisualizer;
 
-/* PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_saver::OctomapSaver, nodelet::Nodelet) */
 PLUGINLIB_EXPORT_CLASS(OcTreeVisualizer, nodelet::Nodelet)
 PLUGINLIB_EXPORT_CLASS(ColorOcTreeVisualizer, nodelet::Nodelet)
 
