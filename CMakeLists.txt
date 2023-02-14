@@ -47,7 +47,7 @@ catkin_package(
   INCLUDE_DIRS include
   CATKIN_DEPENDS roscpp nodelet std_msgs mrs_lib visualization_msgs
   DEPENDS OCTOMAP
-  LIBRARIES OctomapRvizVisualizer OctomapEditor OctomapSaver OctomapMethods
+  LIBRARIES OctomapRvizVisualizer OctomapEditor OctomapSaver
   )
 
 include_directories(
@@ -56,23 +56,6 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${OCTOMAP_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
-  )
-
-# OctomapMethods
-
-add_library(OctomapMethods
-  src/octomap_methods.cpp
-  )
-
-add_dependencies(OctomapMethods
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-  )
-
-target_link_libraries(OctomapMethods
-  ${catkin_LIBRARIES}
-  ${OCTOMAP_LIBRARIES}
-  ${PCL_LIBRARIES}
   )
 
 # OctomapRvizVisualizer
@@ -90,7 +73,6 @@ target_link_libraries(OctomapRvizVisualizer
   ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${PCL_LIBRARIES}
-  OctomapMethods
   )
 
 # OctomapEditor
@@ -108,7 +90,6 @@ target_link_libraries(OctomapEditor
   ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${PCL_LIBRARIES}
-  OctomapMethods
   )
 
 # OctomapSaver
@@ -126,5 +107,4 @@ target_link_libraries(OctomapSaver
   ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${PCL_LIBRARIES}
-  OctomapMethods
   )
