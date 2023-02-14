@@ -203,6 +203,7 @@ bool OctomapSaver<OcTreeT>::saveToFile(std::shared_ptr<OcTreeT>& octree, const s
 
 //}
 
+/* checkType() *//*//{*/
 template <typename OcTreeT>
 bool OctomapSaver<OcTreeT>::checkType(std::string type_id)
 {
@@ -232,6 +233,7 @@ bool OctomapSaver<octomap::ColorOcTree>::checkType(std::string type_id)
   if(type_id == "ColorOcTree") return true;
   else return false;
 }
+/*//}*/
 
 }  // namespace octomap_saver
 

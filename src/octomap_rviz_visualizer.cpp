@@ -234,6 +234,12 @@ void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<
 
   octomap_msgs::OctomapConstPtr octomap = wrp.getMsg();
 
+  if(!checkType<OcTree_t>(octomap->id)){
+    ROS_ERROR_THROTTLE(2.0, "Wrong octomap type. Change octree_type parameter.");
+    /* setStatusStd(StatusProperty::Error, "Message", "Wrong octomap type. Use a different display type."); */
+    return;
+  }
+
   octomap::AbstractOcTree* tree_ptr;
 
   if (octomap->binary) {

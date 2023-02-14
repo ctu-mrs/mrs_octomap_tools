@@ -1138,4 +1138,36 @@ void expandNodeRecursive(std::shared_ptr<OcTree_t>& octree, octomap::OcTreeNode*
 
 //}
 
+/* checkType() *//*//{*/
+template <typename OcTreeT>
+bool checkType(std::string type_id)
+{
+  //General case: Need to be specialized for every used case
+  /* setStatus(StatusProperty::Warn, "Messages", QString("Cannot verify octomap type")); */
+  ROS_WARN_THROTTLE(2.0, "[Octomap_saver]: Cannot verify octomap type.");
+  return true; //Try deserialization, might crash though
+}
+  
+/* template <> */
+/* bool checkType<octomap::OcTreeStamped>(std::string type_id) */
+/* { */
+/*   if(type_id == "OcTreeStamped") return true; */
+/*   else return false; */
+/* } */
+
+template <>
+bool checkType<octomap::OcTree>(std::string type_id)
+{
+  if(type_id == "OcTree") return true;
+  else return false;
+}
+
+template <>
+bool checkType<octomap::ColorOcTree>(std::string type_id)
+{
+  if(type_id == "ColorOcTree") return true;
+  else return false;
+}
+/*//}*/
+
 }  // namespace octomap_tools

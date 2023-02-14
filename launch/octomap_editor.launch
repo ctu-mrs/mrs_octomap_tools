@@ -54,6 +54,7 @@
     <arg name="octomap_topic" value="octomap_editor/octomap" />
     <arg name="filter" value="false" />
     <arg name="remove_ceiling" value="false" />
+    <arg name="octree_type" value="$(arg octree_type)" />
 
   </include>
 

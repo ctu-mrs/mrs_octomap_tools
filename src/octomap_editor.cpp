@@ -979,7 +979,7 @@ bool OctomapEditor<OcTree_t>::loadFromFile(const std::string& filename) {
       octree_ = std::shared_ptr<OcTree_t>(tree);
 
       if (!octree_) {
-        ROS_ERROR("[OctomapEditor]: could not read OcTree file");
+        ROS_ERROR("[OctomapEditor]: Could not read OcTree file. Are you using correct octree_type?");
         return false;
       }
 
@@ -1009,7 +1009,7 @@ bool OctomapEditor<OcTree_t>::loadFromFile(const std::string& filename) {
       octree_          = std::shared_ptr<OcTree_t>(OcTree);
 
       if (!octree_) {
-        ROS_ERROR("[OctomapEditor]: could not read OcTree file");
+        ROS_ERROR("[OctomapEditor]: Could not read OcTree file. Are you using correct octree_type?");
         return false;
       }
 

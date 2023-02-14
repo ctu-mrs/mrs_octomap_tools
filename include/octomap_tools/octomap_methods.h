@@ -115,6 +115,10 @@ octomap::OcTreeNode* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, octomap:
 template <typename OcTree_t>
 octomap::OcTreeNode* touchNode(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, unsigned int target_depth = 0);
 
+///Returns false, if the type_id (of the message) does not correspond to the template paramter
+///of this class, true if correct or unknown (i.e., no specialized method for that template).
+template <typename OcTree_t>
+bool checkType(std::string type_id);
 
 }  // namespace octomap_tools
 
