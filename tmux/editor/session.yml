@@ -6,7 +6,7 @@ windows:
   - editor:
       layout: tiled
       panes:
-        - waitForRos; roslaunch octomap_tools octomap_editor.launch
+        - waitForRos; roslaunch mrs_octomap_tools octomap_editor.launch
   - reconfigure:
       layout: tiled
       panes:
