@@ -1,35 +1,35 @@
 <library path="lib/libOctomapRvizVisualizer">
-  <class name="octomap_tools/OctomapRvizVisualizer" type="OcTreeVisualizer" base_class_type="nodelet::Nodelet">
+  <class name="mrs_octomap_tools/OctomapRvizVisualizer" type="OcTreeVisualizer" base_class_type="nodelet::Nodelet">
     <description>OctomapRvizVisualizer nodelet</description>
   </class>
 </library>
 
 <library path="lib/libOctomapRvizVisualizer">
-  <class name="octomap_tools/ColorOctomapRvizVisualizer" type="ColorOcTreeVisualizer" base_class_type="nodelet::Nodelet">
+  <class name="mrs_octomap_tools/ColorOctomapRvizVisualizer" type="ColorOcTreeVisualizer" base_class_type="nodelet::Nodelet">
     <description>OctomapRvizVisualizer nodelet</description>
   </class>
 </library>
 
 <library path="lib/libOctomapEditor">
-  <class name="octomap_tools/OctomapEditor" type="OcTreeEditor" base_class_type="nodelet::Nodelet">
+  <class name="mrs_octomap_tools/OctomapEditor" type="OcTreeEditor" base_class_type="nodelet::Nodelet">
     <description>OctomapEditor nodelet</description>
   </class>
 </library>
 
 <library path="lib/libOctomapEditor">
-  <class name="octomap_tools/ColorOctomapEditor" type="ColorOcTreeEditor" base_class_type="nodelet::Nodelet">
+  <class name="mrs_octomap_tools/ColorOctomapEditor" type="ColorOcTreeEditor" base_class_type="nodelet::Nodelet">
     <description>OctomapEditor nodelet</description>
   </class>
 </library>
 
 <library path="lib/libOctomapSaver">
-  <class name="octomap_tools/OctomapSaver" type="OcTreeSaver" base_class_type="nodelet::Nodelet">
+  <class name="mrs_octomap_tools/OctomapSaver" type="OcTreeSaver" base_class_type="nodelet::Nodelet">
     <description>OctomapSaver nodelet</description>
   </class>
 </library>
 
 <library path="lib/libOctomapSaver">
-  <class name="octomap_tools/ColorOctomapSaver" type="ColorOcTreeSaver" base_class_type="nodelet::Nodelet">
+  <class name="mrs_octomap_tools/ColorOctomapSaver" type="ColorOcTreeSaver" base_class_type="nodelet::Nodelet">
     <description>OctomapSaver nodelet</description>
   </class>
 </library>

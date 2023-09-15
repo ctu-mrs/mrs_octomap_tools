@@ -26,11 +26,11 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/common/transforms.h>
 
-#include <octomap_tools/octomap_methods.h>
+#include <mrs_octomap_tools/octomap_methods.h>
 
 //}
 
-namespace octomap_tools
+namespace mrs_octomap_tools
 {
 
 namespace octomap_rviz_visualizer
@@ -65,7 +65,7 @@ private:
 
   mrs_lib::SubscribeHandler<octomap_msgs::Octomap> sh_octomap_;
 
-  void callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octomap>& wrp);
+  void callbackOctomap(const octomap_msgs::Octomap::ConstPtr msg);
 
   // normal markers
 
@@ -218,7 +218,7 @@ void OctomapRvizVisualizer<OcTree_t>::onInit() {
 /* callbackOctomap() //{ */
 
 template <typename OcTree_t>
-void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octomap>& wrp) {
+void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(const octomap_msgs::Octomap::ConstPtr msg) {
 
   if (!is_initialized_) {
     return;
@@ -239,7 +239,7 @@ void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<
     return;
   }
 
-  octomap_msgs::OctomapConstPtr octomap = wrp.getMsg();
+  octomap_msgs::OctomapConstPtr octomap = msg;
 
   if (!checkType<OcTree_t>(octomap->id)) {
     ROS_ERROR_THROTTLE(2.0, "Wrong octomap type. Change octree_type parameter.");
@@ -335,7 +335,7 @@ void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<
           double y = it.getY();
 
           std_msgs::ColorRGBA color;
-          color.a = 1.0;
+          color.a        = 1.0;
           bool got_color = getColor(*it, color);
 
           unsigned idx = it.getDepth();
@@ -359,18 +359,18 @@ void OctomapRvizVisualizer<OcTree_t>::callbackOctomap(mrs_lib::SubscribeHandler<
           }
 
           if (pc_occupied_subscribed) {
-/* #ifdef COLOR_OCTOMAP_SERVER */
-/*             PCLPoint _point = PCLPoint(); */
-/*             _point.x        = x; */
-/*             _point.y        = y; */
-/*             _point.z        = z; */
-/*             _point.r        = r; */
-/*             _point.g        = g; */
-/*             _point.b        = b; */
-/*             occupied_pclCloud.push_back(_point); */
-/* #else */
+            /* #ifdef COLOR_OCTOMAP_SERVER */
+            /*             PCLPoint _point = PCLPoint(); */
+            /*             _point.x        = x; */
+            /*             _point.y        = y; */
+            /*             _point.z        = z; */
+            /*             _point.r        = r; */
+            /*             _point.g        = g; */
+            /*             _point.b        = b; */
+            /*             occupied_pclCloud.push_back(_point); */
+            /* #else */
             occupied_pcl_cloud.push_back(PCLPoint(float(x), float(y), float(z)));
-/* #endif */
+            /* #endif */
           }
         }
       }
@@ -637,14 +637,12 @@ bool OctomapRvizVisualizer<octomap::ColorOcTree>::getColor(octomap::ColorOcTree:
 
 }  // namespace octomap_rviz_visualizer
 
-}  // namespace octomap_tools
+}  // namespace mrs_octomap_tools
 
 #include <pluginlib/class_list_macros.h>
 
-typedef octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::OcTree>      OcTreeVisualizer;
-typedef octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::ColorOcTree> ColorOcTreeVisualizer;
+typedef mrs_octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::OcTree>      OcTreeVisualizer;
+typedef mrs_octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer<octomap::ColorOcTree> ColorOcTreeVisualizer;
 
 PLUGINLIB_EXPORT_CLASS(OcTreeVisualizer, nodelet::Nodelet)
 PLUGINLIB_EXPORT_CLASS(ColorOcTreeVisualizer, nodelet::Nodelet)
-
-/* PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_rviz_visualizer::OctomapRvizVisualizer, nodelet::Nodelet) */

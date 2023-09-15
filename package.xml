@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package format="2">
 
-  <name>octomap_tools</name>
+  <name>mrs_octomap_tools</name>
   <version>1.0.0</version>
-  <description>The OctoMap tools package</description>
+  <description>The MRS OctoMap tools package</description>
 
   <author email="tomas.baca@fel.cvut.cz">Tomas Baca</author>
   <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
@@ -12,16 +12,17 @@
 
   <buildtool_depend>catkin</buildtool_depend>
 
-  <depend>roscpp</depend>
   <depend>cmake_modules</depend>
+  <depend>dynamic_reconfigure</depend>
+  <depend>mrs_lib</depend>
   <depend>nodelet</depend>
-  <depend>std_msgs</depend>
   <depend>octomap_msgs</depend>
   <depend>octomap_ros</depend>
-  <depend>mrs_lib</depend>
-  <depend>visualization_msgs</depend>
   <depend>pcl_conversions</depend>
   <depend>pcl_msgs</depend>
+  <depend>roscpp</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
 
   <export>
     <nodelet plugin="${prefix}/nodelets.xml" />

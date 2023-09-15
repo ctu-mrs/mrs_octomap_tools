@@ -19,7 +19,7 @@
 
 //}
 
-namespace octomap_tools
+namespace mrs_octomap_tools
 {
 
 namespace octomap_saver
@@ -56,14 +56,14 @@ private:
 
   mrs_lib::SubscribeHandler<octomap_msgs::Octomap> sh_octomap_;
 
-  void callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octomap>& wrp);
+  void callbackOctomap(const octomap_msgs::Octomap::ConstPtr msg);
 
   // | ------------------------ routines ------------------------ |
 
   bool saveToFile(std::shared_ptr<OcTreeT>& octree, const std::string& filename);
 
-  ///Returns false, if the type_id (of the message) does not correspond to the template paramter
-  ///of this class, true if correct or unknown (i.e., no specialized method for that template).
+  /// Returns false, if the type_id (of the message) does not correspond to the template paramter
+  /// of this class, true if correct or unknown (i.e., no specialized method for that template).
   bool checkType(std::string type_id);
 };
 
@@ -118,7 +118,7 @@ void OctomapSaver<OcTreeT>::onInit() {
 /* callbackOctomap() //{ */
 
 template <typename OcTreeT>
-void OctomapSaver<OcTreeT>::callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octomap>& wrp) {
+void OctomapSaver<OcTreeT>::callbackOctomap(const octomap_msgs::Octomap::ConstPtr msg) {
 
   if (!is_initialized_) {
     return;
@@ -126,9 +126,9 @@ void OctomapSaver<OcTreeT>::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
   ROS_INFO_THROTTLE(1.0, "[OctomapSaver]: getting octomap");
 
-  octomap_msgs::OctomapConstPtr octomap = wrp.getMsg();
+  octomap_msgs::OctomapConstPtr octomap = msg;
 
-  if(!checkType(octomap->id)){
+  if (!checkType(octomap->id)) {
     ROS_ERROR_THROTTLE(2.0, "Wrong octomap type. Change octree_type parameter.");
     /* setStatusStd(StatusProperty::Error, "Message", "Wrong octomap type. Use a different display type."); */
     return;
@@ -179,9 +179,9 @@ bool OctomapSaver<OcTreeT>::saveToFile(std::shared_ptr<OcTreeT>& octree, const s
   bool succ = false;
 
   if (_binary_) {
-   succ = octree->writeBinary(tmp_file_path) ;
+    succ = octree->writeBinary(tmp_file_path);
   } else {
-   succ = octree->write(tmp_file_path) ;
+    succ = octree->write(tmp_file_path);
   }
 
   if (!succ) {
@@ -203,16 +203,15 @@ bool OctomapSaver<OcTreeT>::saveToFile(std::shared_ptr<OcTreeT>& octree, const s
 
 //}
 
-/* checkType() *//*//{*/
+/* checkType() */ /*//{*/
 template <typename OcTreeT>
-bool OctomapSaver<OcTreeT>::checkType(std::string type_id)
-{
-  //General case: Need to be specialized for every used case
+bool OctomapSaver<OcTreeT>::checkType(std::string type_id) {
+  // General case: Need to be specialized for every used case
   /* setStatus(StatusProperty::Warn, "Messages", QString("Cannot verify octomap type")); */
   ROS_WARN_THROTTLE(2.0, "[Octomap_saver]: Cannot verify octomap type.");
-  return true; //Try deserialization, might crash though
+  return true;  // Try deserialization, might crash though
 }
-  
+
 /* template <> */
 /* bool OctomapSaver<octomap::OcTreeStamped>::checkType(std::string type_id) */
 /* { */
@@ -221,28 +220,30 @@ bool OctomapSaver<OcTreeT>::checkType(std::string type_id)
 /* } */
 
 template <>
-bool OctomapSaver<octomap::OcTree>::checkType(std::string type_id)
-{
-  if(type_id == "OcTree") return true;
-  else return false;
+bool OctomapSaver<octomap::OcTree>::checkType(std::string type_id) {
+  if (type_id == "OcTree")
+    return true;
+  else
+    return false;
 }
 
 template <>
-bool OctomapSaver<octomap::ColorOcTree>::checkType(std::string type_id)
-{
-  if(type_id == "ColorOcTree") return true;
-  else return false;
+bool OctomapSaver<octomap::ColorOcTree>::checkType(std::string type_id) {
+  if (type_id == "ColorOcTree")
+    return true;
+  else
+    return false;
 }
 /*//}*/
 
 }  // namespace octomap_saver
 
-}  // namespace octomap_tools
+}  // namespace mrs_octomap_tools
 
 #include <pluginlib/class_list_macros.h>
 
-typedef octomap_tools::octomap_saver::OctomapSaver<octomap::OcTree> OcTreeSaver;
-typedef octomap_tools::octomap_saver::OctomapSaver<octomap::ColorOcTree> ColorOcTreeSaver;
+typedef mrs_octomap_tools::octomap_saver::OctomapSaver<octomap::OcTree>      OcTreeSaver;
+typedef mrs_octomap_tools::octomap_saver::OctomapSaver<octomap::ColorOcTree> ColorOcTreeSaver;
 
 /* PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_saver::OctomapSaver, nodelet::Nodelet) */
 PLUGINLIB_EXPORT_CLASS(OcTreeSaver, nodelet::Nodelet)

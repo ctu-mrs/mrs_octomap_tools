@@ -12,7 +12,7 @@
 
 /* using OcTree_t = octomap::OcTree; */
 
-namespace octomap_tools
+namespace mrs_octomap_tools
 {
 
 const std::vector<std::vector<int>> EXPANSION_DIRECTIONS = {{-1, -1, -1}, {-1, -1, 0}, {-1, -1, 1}, {-1, 0, -1}, {-1, 0, 0}, {-1, 0, 1}, {-1, 1, -1},
@@ -25,7 +25,6 @@ typedef enum
   DILATE,
   ERODE,
 } Morphology_t;
-
 
 
 template <typename OcTree_t>
@@ -109,19 +108,19 @@ template <typename OcTree_t>
 bool morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operation, const octomap::point3d& p_min, const octomap::point3d& p_max);
 
 template <typename OcTree_t>
-typename OcTree_t::NodeType* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, typename OcTree_t::NodeType* node, const octomap::OcTreeKey& key, unsigned int depth,
-                                     unsigned int max_depth = 0);
+typename OcTree_t::NodeType* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, typename OcTree_t::NodeType* node, const octomap::OcTreeKey& key,
+                                             unsigned int depth, unsigned int max_depth = 0);
 
 template <typename OcTree_t>
 typename OcTree_t::NodeType* touchNode(std::shared_ptr<OcTree_t>& octree, const octomap::OcTreeKey& key, unsigned int target_depth = 0);
 
-///Returns false, if the type_id (of the message) does not correspond to the template paramter
-///of this class, true if correct or unknown (i.e., no specialized method for that template).
+/// Returns false, if the type_id (of the message) does not correspond to the template paramter
+/// of this class, true if correct or unknown (i.e., no specialized method for that template).
 template <typename OcTree_t>
 bool checkType(std::string type_id);
 
-}  // namespace octomap_tools
+}  // namespace mrs_octomap_tools
 
-#include <impl/octomap_methods.hpp>
+#include <mrs_octomap_tools/impl/octomap_methods.hpp>
 
 #endif  // OCTOMAP_METHODS_H

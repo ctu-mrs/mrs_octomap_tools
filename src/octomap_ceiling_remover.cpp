@@ -17,7 +17,7 @@
 
 //}
 
-namespace octomap_tools
+namespace mrs_octomap_tools
 {
 
 namespace octomap_ceiling_remover
@@ -47,7 +47,7 @@ private:
 
   mrs_lib::SubscribeHandler<octomap_msgs::Octomap> sh_octomap_;
 
-  void callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octomap>& wrp);
+  void callbackOctomap(const octomap_msgs::Octomap::ConstPtr msg);
 
   // | ------------------------ routines ------------------------ |
 
@@ -99,7 +99,7 @@ void OctomapCeilingRemover::onInit() {
 
 /* callbackOctomap() //{ */
 
-void OctomapCeilingRemover::callbackOctomap(mrs_lib::SubscribeHandler<octomap_msgs::Octomap>& wrp) {
+void OctomapCeilingRemover::callbackOctomap(const octomap_msgs::Octomap::ConstPtr msg) {
 
   if (!is_initialized_) {
     return;
@@ -107,7 +107,7 @@ void OctomapCeilingRemover::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
   ROS_INFO_THROTTLE(1.0, "[OctomapCeilingRemover]: getting octomap");
 
-  octomap_msgs::OctomapConstPtr octomap = wrp.getMsg();
+  octomap_msgs::OctomapConstPtr octomap = msg;
 
   octomap::AbstractOcTree* tree_ptr;
 
@@ -133,7 +133,7 @@ void OctomapCeilingRemover::callbackOctomap(mrs_lib::SubscribeHandler<octomap_ms
 
 }  // namespace octomap_ceiling_remover
 
-}  // namespace octomap_tools
+}  // namespace mrs_octomap_tools
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_ceiling_remover::OctomapCeilingRemover, nodelet::Nodelet)
+PLUGINLIB_EXPORT_CLASS(mrs_octomap_tools::octomap_ceiling_remover::OctomapCeilingRemover, nodelet::Nodelet)

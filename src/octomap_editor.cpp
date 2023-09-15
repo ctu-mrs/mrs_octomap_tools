@@ -4,7 +4,7 @@
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
 
-#include <octomap_tools/octomap_methods.h>
+#include <mrs_octomap_tools/octomap_methods.h>
 
 #include <octomap/OcTree.h>
 #include <octomap/ColorOcTree.h>
@@ -25,13 +25,13 @@
 #include <visualization_msgs/MarkerArray.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <octomap_tools/octomap_editorConfig.h>
+#include <mrs_octomap_tools/octomap_editorConfig.h>
 
 #include <filesystem>
 
 //}
 
-namespace octomap_tools
+namespace mrs_octomap_tools
 {
 
 namespace octomap_rviz_visualizer
@@ -103,10 +103,10 @@ private:
   // | --------------- dynamic reconfigure server --------------- |
 
   boost::recursive_mutex                           mutex_drs_;
-  typedef octomap_tools::octomap_editorConfig      DrsParams_t;
+  typedef mrs_octomap_tools::octomap_editorConfig  DrsParams_t;
   typedef dynamic_reconfigure::Server<DrsParams_t> Drs_t;
   boost::shared_ptr<Drs_t>                         drs_;
-  void                                             callbackDrs(octomap_tools::octomap_editorConfig& params, uint32_t level);
+  void                                             callbackDrs(mrs_octomap_tools::octomap_editorConfig& params, uint32_t level);
   DrsParams_t                                      params_;
   std::mutex                                       mutex_params_;
 };
@@ -251,7 +251,7 @@ void OctomapEditor<OcTree_t>::onInit() {
 /* callbackDrs() //{ */
 
 template <typename OcTree_t>
-void OctomapEditor<OcTree_t>::callbackDrs(octomap_tools::octomap_editorConfig& params, [[maybe_unused]] uint32_t level) {
+void OctomapEditor<OcTree_t>::callbackDrs(mrs_octomap_tools::octomap_editorConfig& params, [[maybe_unused]] uint32_t level) {
 
   if (!is_initialized_) {
     return;
@@ -1466,15 +1466,12 @@ void OctomapEditor<OcTree_t>::saveToUndoList(void) {
 
 }  // namespace octomap_rviz_visualizer
 
-}  // namespace octomap_tools
+}  // namespace mrs_octomap_tools
 
 #include <pluginlib/class_list_macros.h>
 
-typedef octomap_tools::octomap_rviz_visualizer::OctomapEditor<octomap::OcTree> OcTreeEditor;
-typedef octomap_tools::octomap_rviz_visualizer::OctomapEditor<octomap::ColorOcTree> ColorOcTreeEditor;
-
-
-/* PLUGINLIB_EXPORT_CLASS(octomap_tools::octomap_rviz_visualizer::OctomapEditor, nodelet::Nodelet) */
+typedef mrs_octomap_tools::octomap_rviz_visualizer::OctomapEditor<octomap::OcTree>      OcTreeEditor;
+typedef mrs_octomap_tools::octomap_rviz_visualizer::OctomapEditor<octomap::ColorOcTree> ColorOcTreeEditor;
 
 PLUGINLIB_EXPORT_CLASS(OcTreeEditor, nodelet::Nodelet)
 PLUGINLIB_EXPORT_CLASS(ColorOcTreeEditor, nodelet::Nodelet)
