@@ -2,6 +2,10 @@
 
 This package contains a set of tools for OctoMap manipulation and visualization.
 
+> :warning: **Attention please: This README is outdated.**
+>
+> The MRS UAV System 1.5 is being released and this page needs updating. Please, keep in mind that the information on this page might not be valid.
+
 ## OctomapMethods
 
 A library with useful methods for manipulation and post-processing of OctoMap.
