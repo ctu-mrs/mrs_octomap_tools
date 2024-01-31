@@ -1138,7 +1138,8 @@ void expandNodeRecursive(std::shared_ptr<OcTree_t>& octree, typename OcTree_t::N
 
 //}
 
-/* checkType() */ /*//{*/
+/* checkType() //{ */
+
 template <typename OcTree_t>
 bool checkType(std::string type_id) {
   // General case: Need to be specialized for every used case
@@ -1169,6 +1170,7 @@ bool checkType<octomap::ColorOcTree>(std::string type_id) {
   else
     return false;
 }
-/*//}*/
+
+//}
 
 }  // namespace mrs_octomap_tools
