@@ -1,138 +1,128 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.5)
 project(mrs_octomap_tools)
 
-add_definitions(-DOCTOMAP_NODEBUGOUT)
+# Set the correct standards
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Compiler options
+add_compile_options(-O3 -DOCTOMAP_NODEBUGOUT)
 add_compile_options(-fPIC)
 add_compile_options(${PCL_COMPILE_OPTIONS})
 
-# disables anoying googletest warning
-set(CATKIN_ENABLE_TESTING FALSE)
+# Set the compile options to show code warnings
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra)
+endif()
 
-# disables anoying PCL warnings
-set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE INTERNAL "No dev warnings")
+if(ENABLE_COVERAGE)
+  message(WARNING "Building for coverage, the performance might be limited")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fprofile-arcs")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -fprofile-arcs")
+  add_definitions("-O1")
+  add_definitions("-g")
+endif()
 
-set(CATKIN_DEPENDENCIES
-  cmake_modules
-  dynamic_reconfigure
-  mrs_lib
-  nodelet
+# Find dependencies
+set(DEPENDENCIES
+  ament_cmake
+  rclcpp
+  rclcpp_components
+  std_msgs
   octomap_msgs
   octomap_ros
   pcl_conversions
   pcl_msgs
-  roscpp
-  std_msgs
+  pcl_ros
   visualization_msgs
-  )
+  mrs_lib
+)
 
 set(LIBRARIES
   OctomapTools_OctomapRvizVisualizer
   OctomapTools_OctomapEditor
   OctomapTools_OctomapSaver
-  )
+)
 
-find_package(catkin REQUIRED
-  ${CATKIN_DEPENDENCIES}
-  )
+foreach(DEP IN LISTS DEPENDENCIES)
+  find_package(${DEP} REQUIRED)
+endforeach()
 
-generate_dynamic_reconfigure_options(
-  cfg/octomap_editor.cfg
-  )
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-find_package(octomap REQUIRED)
-
-catkin_package(
-  INCLUDE_DIRS include
-  CATKIN_DEPENDS ${CATKIN_DEPENDENCIES}
-  DEPENDS OCTOMAP
-  LIBRARIES ${LIBRARIES}
-  )
-
+# Include directories
 include_directories(
   include
-  ${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake
-  ${catkin_INCLUDE_DIRS}
+  ${rclcpp_INCLUDE_DIRS}
   ${OCTOMAP_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
-  )
+)
 
 # OctomapRvizVisualizer
-
-add_library(OctomapTools_OctomapRvizVisualizer
+add_library(OctomapTools_OctomapRvizVisualizer SHARED
   src/octomap_rviz_visualizer.cpp
-  )
-
-add_dependencies(OctomapTools_OctomapRvizVisualizer
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-  )
-
+)
+ament_target_dependencies(OctomapTools_OctomapRvizVisualizer
+  ${DEPENDENCIES}
+)
 target_link_libraries(OctomapTools_OctomapRvizVisualizer
-  ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${PCL_LIBRARIES}
-  )
+)
 
 # OctomapEditor
-
-add_library(OctomapTools_OctomapEditor
+add_library(OctomapTools_OctomapEditor SHARED
   src/octomap_editor.cpp
-  )
-
-add_dependencies(OctomapTools_OctomapEditor
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-  )
-
+)
+ament_target_dependencies(OctomapTools_OctomapEditor
+  ${DEPENDENCIES}
+)
 target_link_libraries(OctomapTools_OctomapEditor
-  ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${PCL_LIBRARIES}
-  )
+)
 
 # OctomapSaver
-
-add_library(OctomapTools_OctomapSaver
+add_library(OctomapTools_OctomapSaver SHARED
   src/octomap_saver.cpp
-  )
-
-add_dependencies(OctomapTools_OctomapSaver
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-  )
-
+)
+ament_target_dependencies(OctomapTools_OctomapSaver
+  ${DEPENDENCIES}
+)
 target_link_libraries(OctomapTools_OctomapSaver
-  ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${PCL_LIBRARIES}
-  )
+)
 
-## --------------------------------------------------------------
-## |                           Install                          |
-## --------------------------------------------------------------
+# --------------------------------------------------------------
+# |                           Install                          |
+# --------------------------------------------------------------
+ament_export_libraries(${LIBRARIES})
+install(
+  TARGETS ${LIBRARIES}
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
-install(TARGETS ${LIBRARIES}
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
-  )
+install(DIRECTORY include/
+  DESTINATION include
+)
 
 install(DIRECTORY launch config
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-  )
+  DESTINATION share/${PROJECT_NAME}
+)
 
 install(DIRECTORY tmux/
   USE_SOURCE_PERMISSIONS
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/tmux
-  )
+  DESTINATION share/${PROJECT_NAME}/tmux
+)
 
-install(DIRECTORY include/mrs_octomap_tools/
-  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-  )
-
-install(FILES nodelets.xml
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-  )
+ament_export_include_directories(include)
+ament_export_targets(
+  export_${PROJECT_NAME} HAS_LIBRARY_TARGET
+)
+ament_export_dependencies(
+  ${DEPENDENCIES}
+)
+ament_package()
