@@ -1,17 +1,12 @@
 /* includes //{ */
 
-#include <ros/ros.h>
-#include <nodelet/nodelet.h>
-
+#include <rclcpp/rclcpp.hpp>
 #include <octomap/OcTree.h>
-#include <octomap_msgs/Octomap.h>
+#include <octomap_msgs/msg/octomap.hpp>
 #include <octomap_msgs/conversions.h>
-
 #include <mrs_lib/param_loader.h>
-#include <mrs_lib/subscribe_handler.h>
-
+#include <mrs_lib/subscriber_handler.h>
 #include <filesystem>
-
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 
@@ -35,19 +30,18 @@ using OcTreeT = octomap::OcTree;
 
 /* class OctomapCeilingRemover //{ */
 
-class OctomapCeilingRemover : public nodelet::Nodelet {
+class OctomapCeilingRemover : public rclcpp::Node {
 
 public:
-  virtual void onInit();
+  explicit OctomapCeilingRemover(const rclcpp::NodeOptions & options);
 
 private:
-  ros::NodeHandle nh_;
 
   bool is_initialized_ = false;
 
-  mrs_lib::SubscribeHandler<octomap_msgs::Octomap> sh_octomap_;
+  std::shared_ptr<mrs_lib::SubscriberHandler<octomap_msgs::msg::Octomap>> sh_octomap_;
 
-  void callbackOctomap(const octomap_msgs::Octomap::ConstPtr msg);
+  void callbackOctomap(const octomap_msgs::msg::Octomap::ConstSharedPtr msg);
 
   // | ------------------------ routines ------------------------ |
 
@@ -56,58 +50,56 @@ private:
 
 //}
 
-/* onInit() //{ */
+/* constructor //{ */
 
-void OctomapCeilingRemover::onInit() {
+OctomapCeilingRemover::OctomapCeilingRemover(const rclcpp::NodeOptions & options)
+  : Node("octomap_ceiling_remover", options)
+{
+  RCLCPP_INFO(this->get_logger(), "[OctomapCeilingRemover]: initializing");
 
-  nh_ = nodelet::Nodelet::getMTPrivateNodeHandle();
-
-  ros::Time::waitForValid();
-
-  ROS_INFO("[OctomapCeilingRemover]: initializing");
-
-  mrs_lib::ParamLoader param_loader(nh_, "OctomapCeilingRemover");
+  mrs_lib::ParamLoader param_loader(this->shared_from_this(), "OctomapCeilingRemover");
 
   if (!param_loader.loadedSuccessfully()) {
-    ROS_ERROR("[OctomapCeilingRemover]: could not load all parameters");
-    ros::shutdown();
+    RCLCPP_ERROR(this->get_logger(), "[OctomapCeilingRemover]: could not load all parameters");
+    rclcpp::shutdown();
+    return;
   }
 
   // | ----------------------- subscribers ---------------------- |
 
-  mrs_lib::SubscribeHandlerOptions shopts;
-  shopts.nh                 = nh_;
+  mrs_lib::SubscriberHandlerOptions shopts;
+  shopts.node               = this->shared_from_this();
   shopts.node_name          = "OctomapCeilingRemover";
   shopts.no_message_timeout = mrs_lib::no_timeout;
   shopts.threadsafe         = true;
   shopts.autostart          = true;
   shopts.queue_size         = 1;
-  shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
-  sh_octomap_ = mrs_lib::SubscribeHandler<octomap_msgs::Octomap>(shopts, "octomap_in", &OctomapCeilingRemover::callbackOctomap, this);
+  auto callback = [this](const octomap_msgs::msg::Octomap::ConstSharedPtr msg) {
+      this->callbackOctomap(msg);
+    };
+
+  sh_octomap_ = std::make_shared<mrs_lib::SubscriberHandler<octomap_msgs::msg::Octomap>>(shopts, "octomap_in", callback);
 
   // | --------------------- finish the init -------------------- |
 
   is_initialized_ = true;
 
-  ROS_INFO("[OctomapCeilingRemover]: initialized");
+  RCLCPP_INFO(this->get_logger(), "[OctomapCeilingRemover]: initialized");
 }
-
 //}
-
-// | ------------------------ callbacks ----------------------- |
 
 /* callbackOctomap() //{ */
 
-void OctomapCeilingRemover::callbackOctomap(const octomap_msgs::Octomap::ConstPtr msg) {
+void OctomapCeilingRemover::callbackOctomap(const octomap_msgs::msg::Octomap::ConstSharedPtr msg) {
 
   if (!is_initialized_) {
     return;
   }
 
-  ROS_INFO_THROTTLE(1.0, "[OctomapCeilingRemover]: getting octomap");
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[OctomapCeilingRemover]: getting octomap");
 
-  octomap_msgs::OctomapConstPtr octomap = msg;
+  octomap_msgs::msg::Octomap::ConstSharedPtr octomap = msg;
 
   octomap::AbstractOcTree* tree_ptr;
 
@@ -118,7 +110,7 @@ void OctomapCeilingRemover::callbackOctomap(const octomap_msgs::Octomap::ConstPt
   }
 
   if (!tree_ptr) {
-    ROS_WARN_THROTTLE(1.0, "[OctomapCeilingRemover]: octomap message is empty!");
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "[OctomapCeilingRemover]: octomap message is empty!");
     return;
   }
 
@@ -135,5 +127,5 @@ void OctomapCeilingRemover::callbackOctomap(const octomap_msgs::Octomap::ConstPt
 
 }  // namespace mrs_octomap_tools
 
-#include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(mrs_octomap_tools::octomap_ceiling_remover::OctomapCeilingRemover, nodelet::Nodelet)
+#include <rclcpp_components/register_node_macro.hpp>
+RCLCPP_COMPONENTS_REGISTER_NODE(mrs_octomap_tools::octomap_ceiling_remover::OctomapCeilingRemover)
