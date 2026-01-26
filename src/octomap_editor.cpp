@@ -13,7 +13,8 @@
 #include <octomap/AbstractOccupancyOcTree.h>
 
 #include <mrs_lib/param_loader.h>
-#include <mrs_lib/subscribe_handler.h>
+#include <mrs_lib/subscriber_handler.h>
+#include <mrs_lib/publisher_handler.h>
 #include <mrs_lib/attitude_converter.h>
 #include <mrs_lib/batch_visualizer.h>
 #include <mrs_lib/mutex.h>
@@ -66,17 +67,6 @@ namespace mrs_octomap_tools
       std::mutex mutex_octree_;
       double octree_resolution_;
       std::atomic<bool> map_updated_ = true;
-
-      // Undo list
-      std::vector<std::shared_ptr<OcTree_t>> undoo_list_;
-
-      // Batch visualizer
-      mrs_lib::BatchVisualizer bv_;
-
-      // Parameters struct and mutex
-      // TODO: Replace with ROS2 parameter handling
-      // Params params_;
-      std::mutex mutex_params_;
 
       // Methods
       bool loadFromFile(const std::string& filename);
@@ -175,7 +165,7 @@ namespace mrs_octomap_tools
       mrs_lib::PublisherHandlerOptions phopts;
       phopts.node = node_;
 
-      pub_maker_texts_ = mrs::PublisherHandler<visualization_msgs::msg::MarkerArray>(phopts, "~/marker_texts");
+      pub_maker_texts_ = mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray>(phopts, "~/marker_texts");
 
 
       pub_map_ = mrs_lib::PublisherHandler<octomap_msgs::msg::Octomap>(phopts, "~/octomap_out");
@@ -274,7 +264,7 @@ namespace mrs_octomap_tools
     /* callbackDrs() //{ */
 
     template <typename OcTree_t>
-    void OctomapEditor<OcTree_t>::callbackDrs(mrs_octomap_tools::octomap_editorConfig& params, [[maybe_unused]] uint32_t level)
+    void OctomapEditor<OcTree_t>::callbackDrs(DrsParams_t& params, [[maybe_unused]] uint32_t level)
     {
 
       if (!is_initialized_)
@@ -311,7 +301,7 @@ namespace mrs_octomap_tools
         {
           std::scoped_lock lock(mutex_octree_);
 
-          setResolution(octree_, params.resolution);
+          setResolution(octree_, params.resolution, this);
         }
 
         drs_->updateConfig(params);
@@ -326,14 +316,14 @@ namespace mrs_octomap_tools
       if (params.action_refractor)
       {
 
-        RCLCPP_INFO(this.get_logger(), "[OctomapEditor]: changing fractor");
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: changing fractor");
 
         saveToUndoList();
 
         {
           std::scoped_lock lock(mutex_octree_);
 
-          refractor(octree_, params.fractor, octree_resolution_);
+          refractor(octree_, params.fractor, octree_resolution_, this);
         }
 
         params.action_refractor = false;
@@ -598,7 +588,7 @@ namespace mrs_octomap_tools
         {
           std::scoped_lock lock(mutex_octree_);
 
-          morphologyOperation(octree_, DILATE, roi_min, roi_max);
+          morphologyOperation(octree_, DILATE, roi_min, roi_max, this);
         }
 
         params.action_dilate = false;
@@ -621,7 +611,7 @@ namespace mrs_octomap_tools
         {
           std::scoped_lock lock(mutex_octree_);
 
-          morphologyOperation(octree_, ERODE, roi_min, roi_max);
+          morphologyOperation(octree_, ERODE, roi_min, roi_max, this);
         }
 
         params.action_erode = false;
@@ -805,7 +795,7 @@ namespace mrs_octomap_tools
 
           mrs_lib::ScopeTimer scope_time("expand()");
 
-          translateMap(octree_, params.translate_x, params.translate_y, params.translate_z);
+          translateMap(octree_, params.translate_x, params.translate_y, params.translate_z, this);
         }
 
         params.action_translate = false;
@@ -1211,7 +1201,7 @@ namespace mrs_octomap_tools
         map.header.stamp = this->now(); // or this->get_clock()->now()
         if (octomap_msgs::fullMapToMsg(*octree_, map))
         {
-          pub_map_->publish(map);
+          pub_map_.publish(map);
         } else
         {
           RCLCPP_ERROR(this->get_logger(), "[OctomapServer]: error serializing local octomap to full representation");
@@ -1384,7 +1374,7 @@ namespace mrs_octomap_tools
         text_markers.markers.push_back(text_marker);
       }
 
-      pub_marker_texts_->publish(text_markers);
+      pub_marker_texts_.publish(text_markers);
       bv_.publish();
     }
 
@@ -1414,7 +1404,7 @@ namespace mrs_octomap_tools
       // Publish the transform
       try
       {
-        tf_broadcaster_->sendTransform(tf);
+        tf_broadcaster_.sendTransform(tf);
       }
       catch (...)
       {
@@ -1463,7 +1453,6 @@ namespace mrs_octomap_tools
 } // namespace mrs_octomap_tools
 
 // Register as a component
-#include <rclcpp_components/register_node_macro.hpp>
 typedef mrs_octomap_tools::octomap_rviz_visualizer::OctomapEditor<octomap::OcTree> OcTreeEditor;
 typedef mrs_octomap_tools::octomap_rviz_visualizer::OctomapEditor<octomap::ColorOcTree> ColorOcTreeEditor;
 RCLCPP_COMPONENTS_REGISTER_NODE(OcTreeEditor)

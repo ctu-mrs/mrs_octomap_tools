@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.20.0)
 project(mrs_octomap_tools)
 
 # Set the correct standards
@@ -49,53 +49,45 @@ foreach(DEP IN LISTS DEPENDENCIES)
   find_package(${DEP} REQUIRED)
 endforeach()
 
-# Include directories
-include_directories(
-  include
-  ${rclcpp_INCLUDE_DIRS}
-  ${OCTOMAP_INCLUDE_DIRS}
-  ${PCL_INCLUDE_DIRS}
-)
-
 # OctomapRvizVisualizer
 add_library(OctomapTools_OctomapRvizVisualizer SHARED
   src/octomap_rviz_visualizer.cpp
 )
+
 ament_target_dependencies(OctomapTools_OctomapRvizVisualizer
   ${DEPENDENCIES}
-)
-target_link_libraries(OctomapTools_OctomapRvizVisualizer
-  ${OCTOMAP_LIBRARIES}
-  ${PCL_LIBRARIES}
 )
 
 # OctomapEditor
 add_library(OctomapTools_OctomapEditor SHARED
   src/octomap_editor.cpp
 )
+
 ament_target_dependencies(OctomapTools_OctomapEditor
   ${DEPENDENCIES}
-)
-target_link_libraries(OctomapTools_OctomapEditor
-  ${OCTOMAP_LIBRARIES}
-  ${PCL_LIBRARIES}
 )
 
 # OctomapSaver
 add_library(OctomapTools_OctomapSaver SHARED
   src/octomap_saver.cpp
 )
+
 ament_target_dependencies(OctomapTools_OctomapSaver
   ${DEPENDENCIES}
 )
-target_link_libraries(OctomapTools_OctomapSaver
-  ${OCTOMAP_LIBRARIES}
-  ${PCL_LIBRARIES}
-)
+
+foreach(library IN LISTS LIBRARIES)
+  target_include_directories(${library}
+    PUBLIC
+      $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>
+  )
+endforeach()
 
 # --------------------------------------------------------------
 # |                           Install                          |
 # --------------------------------------------------------------
+
 ament_export_libraries(${LIBRARIES})
 install(
   TARGETS ${LIBRARIES}

@@ -73,7 +73,7 @@ namespace mrs_octomap_tools
       shopts.no_message_timeout = mrs_lib::no_timeout;
       shopts.threadsafe = true;
       shopts.autostart = true;
-      shopts.queue_size = 1;
+      // shopts.queue_size = 1;
 
       auto callback = [this](const octomap_msgs::msg::Octomap::ConstSharedPtr msg) { this->callbackOctomap(msg); };
 

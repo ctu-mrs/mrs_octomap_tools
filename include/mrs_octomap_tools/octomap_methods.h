@@ -3,12 +3,11 @@
 
 #include <octomap/OcTree.h>
 #include <octomap/ColorOcTree.h>
-#include <octomap_msgs/Octomap.h>
+#include <octomap_msgs/msg/octomap.h>
 #include <octomap_msgs/conversions.h>
 #include <octomap/AbstractOcTree.h>
 #include <octomap/AbstractOccupancyOcTree.h>
 #include <mrs_lib/scope_timer.h>
-#include <ros/ros.h>
 
 /* using OcTree_t = octomap::OcTree; */
 
@@ -74,11 +73,11 @@ namespace mrs_octomap_tools
   template <typename OcTree_t>
   bool clearOutsideBBX(std::shared_ptr<OcTree_t>& octree, const octomap::point3d& p_min, const octomap::point3d& p_max);
 
-  template <typename OcTree_t>
-  bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution);
+  template <typename OcTree_t, typename Node_t>
+  bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution, Node_t* node);
 
-  template <typename OcTree_t>
-  bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new_resolution);
+  template <typename OcTree_t, typename Node_t>
+  bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new_resolution, Node_t* node);
 
   template <typename OcTree_t>
   bool filterSpecs(std::shared_ptr<OcTree_t>& octree, bool& is_expanded, const int spec_size);
@@ -101,11 +100,12 @@ namespace mrs_octomap_tools
   template <typename OcTree_t>
   bool copyInsideBBX2(std::shared_ptr<OcTree_t>& from, std::shared_ptr<OcTree_t>& to, const octomap::point3d& p_min, const octomap::point3d& p_max);
 
-  template <typename OcTree_t>
-  bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const double& y, const double& z);
+  template <typename OcTree_t, typename Node_t>
+  bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const double& y, const double& z, Node_t* node);
 
-  template <typename OcTree_t>
-  bool morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operation, const octomap::point3d& p_min, const octomap::point3d& p_max);
+  template <typename OcTree_t, typename Node_t>
+  bool morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operation, const octomap::point3d& p_min, const octomap::point3d& p_max,
+                           Node_t* node);
 
   template <typename OcTree_t>
   typename OcTree_t::NodeType* touchNodeRecurs(std::shared_ptr<OcTree_t>& octree, typename OcTree_t::NodeType* node, const octomap::OcTreeKey& key,
@@ -118,6 +118,8 @@ namespace mrs_octomap_tools
   /// of this class, true if correct or unknown (i.e., no specialized method for that template).
   template <typename OcTree_t>
   bool checkType(std::string type_id);
+  // template <typename OcTree_t, typename Node_t>
+  // bool checkType(std::string type_id, Node_t* node);
 
 } // namespace mrs_octomap_tools
 

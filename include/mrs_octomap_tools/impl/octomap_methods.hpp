@@ -376,8 +376,8 @@ namespace mrs_octomap_tools
 
   /* setResolution() //{ */
 
-  template <typename OcTree_t>
-  bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution)
+  template <typename OcTree_t, typename Node_t>
+  bool setResolution(std::shared_ptr<OcTree_t>& octree, const double resolution, Node_t* node)
   {
 
     octree->expand();
@@ -404,7 +404,7 @@ namespace mrs_octomap_tools
     // changing to finer resolution
     if (resolution <= octree->getResolution())
     {
-      ROS_INFO("[OctomapEditor]: changing resolution to a finer one, this may take a while");
+      RCLCPP_INFO(node->get_logger(), "[OctomapEditor]: changing resolution to a finer one, this may take a while");
     }
 
     int x_steps = int((coord_max.x() - coord_min.x()) / resolution);
@@ -432,7 +432,8 @@ namespace mrs_octomap_tools
 
           point++;
 
-          ROS_INFO_THROTTLE(0.1, "[OctomapEditor]: progress: %.2f%%", 100.0 * (double(point) / double(points_total)));
+          RCLCPP_INFO_THROTTLE(node->get_logger(), *node->get_clock(), 100, "[OctomapEditor]: progress: %.2f%%",
+                               100.0 * (double(point) / double(points_total)));
 
           // changing to finer resolution
           if (resolution <= octree->getResolution())
@@ -489,7 +490,7 @@ namespace mrs_octomap_tools
 
     octree = octree_new;
 
-    ROS_INFO("[OctomapEditor]: resolution change finished");
+    RCLCPP_INFO(node->get_logger(), "[OctomapEditor]: resolution change finished");
 
     return true;
   }
@@ -498,8 +499,8 @@ namespace mrs_octomap_tools
 
   /* refractor() //{ */
 
-  template <typename OcTree_t>
-  bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new_resolution)
+  template <typename OcTree_t, typename Node_t>
+  bool refractor(std::shared_ptr<OcTree_t>& octree, const int fractor, double& new_resolution, Node_t* node)
   {
 
     mrs_lib::ScopeTimer timer("refractor");
@@ -526,7 +527,7 @@ namespace mrs_octomap_tools
       octree_new->setClampingThresMax(octree->getClampingThresMaxLog());
     }
 
-    ROS_INFO("[OctomapEditor]: changing to resolution %.2f", new_resolution);
+    RCLCPP_INFO(node->get_logger(), "[OctomapEditor]: changing to resolution %.2f", new_resolution);
 
     /* typename OcTree_t::NodeType* root = octree_new->getRoot(); */
 
@@ -535,7 +536,7 @@ namespace mrs_octomap_tools
     int cell_count = 0;
     unsigned int max_depth = 0;
 
-    ROS_INFO("[OctomapEditor]: orig tree depth %d", octree->getTreeDepth());
+    RCLCPP_INFO(node->get_logger(), "[OctomapEditor]: orig tree depth %d", octree->getTreeDepth());
 
     if (fractor >= 0)
     {
@@ -608,15 +609,15 @@ namespace mrs_octomap_tools
       }
     }
 
-    ROS_INFO("[OctomapEditor]: cell count %d", cell_count);
-    ROS_INFO("[OctomapEditor]: max depth %d", max_depth);
+    RCLCPP_INFO(node->get_logger(), "[OctomapEditor]: cell count %d", cell_count);
+    RCLCPP_INFO(node->get_logger(), "[OctomapEditor]: max depth %d", max_depth);
 
     if (fractor < 0)
     {
       octree = octree_new;
     }
 
-    ROS_INFO("[OctomapEditor]: resolution change finished");
+    RCLCPP_INFO(node->get_logger(), "[OctomapEditor]: resolution change finished");
 
     return true;
   }
@@ -811,11 +812,11 @@ namespace mrs_octomap_tools
 
   /* translateMap() //{ */
 
-  template <typename OcTree_t>
-  bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const double& y, const double& z)
+  template <typename OcTree_t, typename Node_t>
+  bool translateMap(std::shared_ptr<OcTree_t>& octree, const double& x, const double& y, const double& z, Node_t* node)
   {
 
-    ROS_INFO("[OctomapServer]: translating map by %.2f, %.2f, %.2f", x, y, z);
+    RCLCPP_INFO(node->get_logger(), "[OctomapServer]: translating map by %.2f, %.2f, %.2f", x, y, z);
 
     octree->expand();
 
@@ -847,7 +848,7 @@ namespace mrs_octomap_tools
 
     octree = octree_new;
 
-    ROS_INFO("[OctomapServer]: map translated");
+    RCLCPP_INFO(node->get_logger(), "[OctomapServer]: map translated");
 
     return true;
   }
@@ -972,7 +973,7 @@ namespace mrs_octomap_tools
 
       unsigned int pos = octomap::computeChildIdx(key, int(octree->getTreeDepth() - depth - 1));
 
-      /* ROS_INFO("pos: %d", pos); */
+      /* RCLCPP_INFO(this->get_logger(), "pos: %d", pos); */
       if (!octree->nodeChildExists(node, pos))
       {
 
@@ -994,8 +995,9 @@ namespace mrs_octomap_tools
 
   /* morphologyOperation() //{ */
 
-  template <typename OcTree_t>
-  bool morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operation, const octomap::point3d& p_min, const octomap::point3d& p_max)
+  template <typename OcTree_t, typename Node_t>
+  bool morphologyOperation(std::shared_ptr<OcTree_t>& octree, Morphology_t operation, const octomap::point3d& p_min, const octomap::point3d& p_max,
+                           Node_t* node)
   {
 
     expandInBBX(octree, p_min, p_max);
@@ -1051,7 +1053,8 @@ namespace mrs_octomap_tools
 
           point++;
 
-          ROS_INFO_THROTTLE(0.1, "[OctomapEditor]: progress: %.2f%%", 100.0 * (double(point) / double(points_total)));
+          RCLCPP_INFO_THROTTLE(node->get_logger(), *node->get_clock(), 100, "[OctomapEditor]: progress: %.2f%%",
+                               100.0 * (double(point) / double(points_total)));
 
           double z = coord_min.z() + k * octree->getResolution();
 
@@ -1292,7 +1295,7 @@ namespace mrs_octomap_tools
   {
     // General case: Need to be specialized for every used case
     /* setStatus(StatusProperty::Warn, "Messages", QString("Cannot verify octomap type")); */
-    ROS_WARN_THROTTLE(2.0, "[Octomap_saver]: Cannot verify octomap type.");
+    // RCLCPP_WARN_THROTTLE(node->get_logger(), *node->get_clock(), 2000, "[Octomap_saver]: Cannot verify octomap type.");
     return true; // Try deserialization, might crash though
   }
 
