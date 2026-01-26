@@ -32,932 +32,979 @@
 namespace mrs_octomap_tools
 {
 
-namespace octomap_rviz_visualizer
-{
-
-template <typename OcTree_t>
-class OctomapEditor : public rclcpp::Node
-{
-public:
-  explicit OctomapEditor(const rclcpp::NodeOptions & options);
-
-private:
-  bool is_initialized_ = false;
-
-  // | ------------------------- params ------------------------- |
-
-  std::string _map_path_;
-
-  // Publishers
-  mrs_lib::PublisherHandler<octomap_msgs::msg::Octomap> pub_map_;
-  mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray> pub_marker_texts_;
-
-  // | --------------------- tf_broadcaster --------------------- |
-
-  mrs_lib::TransformBroadcaster tf_broadcaster_;
-
-  // Timers
-  rclcpp::TimerBase::SharedPtr timer_main_;
-  void timerMain();
-
-  // | ------------------------- octomap ------------------------ |
-
-  std::shared_ptr<OcTree_t> octree_;
-  std::mutex                mutex_octree_;
-  double                    octree_resolution_;
-  std::atomic<bool>         map_updated_ = true;
-
-  // Undo list
-  std::vector<std::shared_ptr<OcTree_t>> undoo_list_;
-
-  // Batch visualizer
-  mrs_lib::BatchVisualizer bv_;
-
-  // Parameters struct and mutex
-  // TODO: Replace with ROS2 parameter handling
-  // Params params_;
-  std::mutex mutex_params_;
-
-  // Methods
-  bool loadFromFile(const std::string& filename);
-  bool saveToFile(const std::string& filename);
-  void publishMap(void);
-  void publishMarkers(void);
-  void publishTf(void);
-
-  void undo(void);
-  void saveToUndoList(void);
-
-  // | ------------------------ undo list ----------------------- |
-
-  std::vector<std::shared_ptr<OcTree_t>> undoo_list_;
-
-  // | -------------------- batch visualizer -------------------- |
-
-  mrs_lib::BatchVisualizer bv_;
-  mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray> pub_maker_texts_;
-
-  // | --------------- dynamic reconfigure server --------------- |
-
-  boost::recursive_mutex                           mutex_drs_;
-  typedef mrs_octomap_tools::octomap_editorConfig  DrsParams_t;
-  typedef dynamic_reconfigure::Server<DrsParams_t> Drs_t;
-  boost::shared_ptr<Drs_t>                         drs_;
-  void                                             callbackDrs(mrs_octomap_tools::octomap_editorConfig& params, uint32_t level);
-  DrsParams_t                                      params_;
-  std::mutex                                       mutex_params_;
-};
-
-//}
-
-/* onInit() //{ */
-
-template <typename OcTree_t>
-OctomapEditor<OcTree_t>::OctomapEditor(const rclcpp::NodeOptions & options)
-  : rclcpp::Node("octomap_editor", options)
-{
-  RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: initializing");
-
-  mrs_lib::ParamLoader param_loader(this->shared_from_this(), this->get_name());
-
-  std::string custom_config_path;
-  param_loader.loadParam("custom_config", custom_config_path);
-
-  if (custom_config_path != "") {
-    RCLCPP_INFO(node_->get_logger(), "loading custom config '%s", custom_config_path.c_str());
-    param_loader.addYamlFile(custom_config_path);
-  }
-
-  // load other configs
-
-  std::vector<std::string> config_files;
-  param_loader.loadParam("config_files", config_files);
-
-  for (auto config_file : config_files) {
-    RCLCPP_INFO(node_->get_logger(), "loading config file '%s'", config_file.c_str());
-    param_loader.addYamlFile(config_file);
-  }
-
-  param_loader.loadParam("map_path", _map_path_);
-
-  param_loader.loadParam("map/name", params_.map_name);
-
-  param_loader.loadParam("roi_default/width", params_.roi_width);
-  param_loader.loadParam("roi_default/depth", params_.roi_depth);
-  param_loader.loadParam("roi_default/height", params_.roi_height);
-
-  param_loader.loadParam("roi_default/x", params_.roi_x);
-  param_loader.loadParam("roi_default/y", params_.roi_y);
-  param_loader.loadParam("roi_default/z", params_.roi_z);
-
-  param_loader.loadParam("roi_default/move_step", params_.roi_move_step);
-  param_loader.loadParam("roi_default/resize_step", params_.roi_resize_step);
-
-  param_loader.loadParam("free_above_ground_height", params_.free_above_ground_height);
-
-  if (!param_loader.loadedSuccessfully()) {
-  RCLCPP_ERROR(node_->get_logger(), "[%s]: Could not load all non-optional parameters. Shutting down.", node_->get_name());
-  rclcpp::shutdown();
-  }
-
-
-  // | -------------------- batch visualizer -------------------- |
-
-  bv_ = mrs_lib::BatchVisualizer(nh_, "markers", "map_frame");
-  bv_.setPointsScale(0.5);
-  bv_.setLinesScale(0.5);
-
-
-  // | ----------------------- publishers ----------------------- |
-
-  mrs_lib::PublisherHandlerOptions phopts;
-  phopts.node = node_;  
-
-  pub_maker_texts_ = mrs::PublisherHandler<visualization_msgs::msg::MarkerArray>(phopts, "~/marker_texts");
-
-
-
-  pub_map_ = mrs_lib::PublisherHandler<octomap_msgs::msg::Octomap>(phopts, "~/octomap_out");
-
-  // | --------------------- tf boradcaster --------------------- |
-
-  tf_broadcaster_ = mrs_lib::TransformBroadcaster();
-
-  // | ---------------------- load the map ---------------------- |
-
-  if (loadFromFile(params_.map_name)) {
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: map loaded");
-    params_.resolution = octree_->getResolution();
-  } else {
-    RCLCPP_ERROR(this->get_logger(),"[OctomapEditor]: could not load the map");
-    params_.resolution = 0;
-  }
-
-  // | --------------------------- drs -------------------------- |
-
-  params_.action_set_unknown           = false;
-  params_.action_clear_outside         = false;
-  params_.roi_fit_to_map               = false;
-  params_.action_set_free              = false;
-  params_.action_set_occupied          = false;
-  params_.action_set_free_above_ground = false;
-  params_.action_set_unknown_to_free   = false;
-  params_.action_remove_free           = false;
-  params_.undo                         = false;
-  params_.action_translate             = false;
-  params_.action_dilate                = false;
-  params_.action_erode                 = false;
-  params_.action_refractor             = false;
-  params_.action_filter_specs          = false;
-  params_.action_copy                  = false;
-  params_.action_clear                 = false;
-  params_.action_remove_ceiling        = false;
-
-  params_.action_save = false;
-  params_.action_load = false;
-
-  params_.prune         = false;
-  params_.expand        = false;
-  params_.prune_in_roi  = false;
-  params_.expand_in_roi = false;
-
-  params_.translate_x = 0;
-  params_.translate_y = 0;
-  params_.translate_z = 0;
-
-  params_.spec_size = 2;
-
-  params_.roi_resize_plus_x  = false;
-  params_.roi_resize_minus_x = false;
-
-  params_.roi_resize_plus_y  = false;
-  params_.roi_resize_minus_y = false;
-
-  params_.roi_resize_plus_z  = false;
-  params_.roi_resize_minus_z = false;
-
-  params_.roi_move_plus_x  = false;
-  params_.roi_move_minus_x = false;
-
-  params_.roi_move_plus_y  = false;
-  params_.roi_move_minus_y = false;
-
-  params_.roi_move_plus_z  = false;
-  params_.roi_move_minus_z = false;
-
-  params_.fractor = 2;
-
-  drs_.reset(new Drs_t(mutex_drs_, nh_));
-  drs_->updateConfig(params_);
-  Drs_t::CallbackType f = boost::bind(&OctomapEditor::callbackDrs, this, _1, _2);
-  drs_->setCallback(f);
-
-  // | ------------------------- timers ------------------------- |
-
-  timer_main_ = this->create_wall_timer(
-    std::chrono::milliseconds(1000),  // 1000ms = 1 second
-    std::bind(&OctomapEditor::timerMain, this)
-);
-
-
-  // | --------------------- finish the init -------------------- |
-
-  is_initialized_ = true;
-  RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: initialized");
-}
-
-//}
-
-// | ------------------------ callbacks ----------------------- |
-
-/* callbackDrs() //{ */
-
-template <typename OcTree_t>
-void OctomapEditor<OcTree_t>::callbackDrs(mrs_octomap_tools::octomap_editorConfig& params, [[maybe_unused]] uint32_t level) {
-
-  if (!is_initialized_) {
-    return;
-  }
-
-  RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: drs action started");
-
+  namespace octomap_rviz_visualizer
   {
-    std::scoped_lock lock(mutex_params_);
 
-    params_ = params;
-  }
-
-  // | --------------------- update the ROI --------------------- |
-
-  octomap::point3d roi_min(float(params_.roi_x - params_.roi_width / 2.0), float(params_.roi_y - params_.roi_depth / 2.0),
-                           float(params_.roi_z - params_.roi_height / 2.0));
-  octomap::point3d roi_max(float(params_.roi_x + params_.roi_width / 2.0), float(params_.roi_y + params_.roi_depth / 2.0),
-                           float(params_.roi_z + params_.roi_height / 2.0));
-
-  // | ------------------- process the actions ------------------ |
-
-  /* resolution //{ */
-
-  if (fabs(octree_->getResolution() - params.resolution) > 1e-3 && !params.action_load) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: changing resolution");
-
-    saveToUndoList();
-
+    template <typename OcTree_t>
+    class OctomapEditor : public rclcpp::Node
     {
-      std::scoped_lock lock(mutex_octree_);
+    public:
+      explicit OctomapEditor(const rclcpp::NodeOptions& options);
 
-      setResolution(octree_, params.resolution);
-    }
+    private:
+      bool is_initialized_ = false;
 
-    drs_->updateConfig(params);
+      // | ------------------------- params ------------------------- |
 
-    map_updated_ = true;
-  }
+      std::string _map_path_;
 
-  //}
+      // Publishers
+      mrs_lib::PublisherHandler<octomap_msgs::msg::Octomap> pub_map_;
+      mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray> pub_marker_texts_;
 
-  /* refractor //{ */
+      // | --------------------- tf_broadcaster --------------------- |
 
-  if (params.action_refractor) {
+      mrs_lib::TransformBroadcaster tf_broadcaster_;
 
-    RCLCPP_INFO(this.get_logger(),"[OctomapEditor]: changing fractor");
+      // Timers
+      rclcpp::TimerBase::SharedPtr timer_main_;
+      void timerMain();
 
-    saveToUndoList();
+      // | ------------------------- octomap ------------------------ |
 
+      std::shared_ptr<OcTree_t> octree_;
+      std::mutex mutex_octree_;
+      double octree_resolution_;
+      std::atomic<bool> map_updated_ = true;
+
+      // Undo list
+      std::vector<std::shared_ptr<OcTree_t>> undoo_list_;
+
+      // Batch visualizer
+      mrs_lib::BatchVisualizer bv_;
+
+      // Parameters struct and mutex
+      // TODO: Replace with ROS2 parameter handling
+      // Params params_;
+      std::mutex mutex_params_;
+
+      // Methods
+      bool loadFromFile(const std::string& filename);
+      bool saveToFile(const std::string& filename);
+      void publishMap(void);
+      void publishMarkers(void);
+      void publishTf(void);
+
+      void undo(void);
+      void saveToUndoList(void);
+
+      // | ------------------------ undo list ----------------------- |
+
+      std::vector<std::shared_ptr<OcTree_t>> undoo_list_;
+
+      // | -------------------- batch visualizer -------------------- |
+
+      mrs_lib::BatchVisualizer bv_;
+      mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray> pub_maker_texts_;
+
+      // | --------------- dynamic reconfigure server --------------- |
+
+      boost::recursive_mutex mutex_drs_;
+      typedef mrs_octomap_tools::octomap_editorConfig DrsParams_t;
+      typedef dynamic_reconfigure::Server<DrsParams_t> Drs_t;
+      boost::shared_ptr<Drs_t> drs_;
+      void callbackDrs(mrs_octomap_tools::octomap_editorConfig& params, uint32_t level);
+      DrsParams_t params_;
+      std::mutex mutex_params_;
+    };
+
+    //}
+
+    /* onInit() //{ */
+
+    template <typename OcTree_t>
+    OctomapEditor<OcTree_t>::OctomapEditor(const rclcpp::NodeOptions& options) : rclcpp::Node("octomap_editor", options)
     {
-      std::scoped_lock lock(mutex_octree_);
+      RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: initializing");
 
-      refractor(octree_, params.fractor, octree_resolution_);
-    }
+      mrs_lib::ParamLoader param_loader(this->shared_from_this(), this->get_name());
 
-    params.action_refractor = false;
-    params.resolution       = octree_resolution_;
-    drs_->updateConfig(params);
+      std::string custom_config_path;
+      param_loader.loadParam("custom_config", custom_config_path);
 
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* remove ceiling //{ */
-
-  if (params.action_remove_ceiling) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: removing ceiling");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      bool is_expanded = false;
-
-      removeCeiling(octree_, is_expanded);
-
-      if (is_expanded) {
-        octree_->prune();
+      if (custom_config_path != "")
+      {
+        RCLCPP_INFO(node_->get_logger(), "loading custom config '%s", custom_config_path.c_str());
+        param_loader.addYamlFile(custom_config_path);
       }
-    }
 
-    params.action_remove_ceiling = false;
-    drs_->updateConfig(params);
+      // load other configs
 
-    map_updated_ = true;
-  }
+      std::vector<std::string> config_files;
+      param_loader.loadParam("config_files", config_files);
 
-  //}
-
-  /* filter specs //{ */
-
-  if (params.action_filter_specs) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: filterin specs");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      bool is_expanded = false;
-
-      filterSpecs(octree_, is_expanded, params.spec_size);
-
-      if (is_expanded) {
-        octree_->prune();
+      for (auto config_file : config_files)
+      {
+        RCLCPP_INFO(node_->get_logger(), "loading config file '%s'", config_file.c_str());
+        param_loader.addYamlFile(config_file);
       }
+
+      param_loader.loadParam("map_path", _map_path_);
+
+      param_loader.loadParam("map/name", params_.map_name);
+
+      param_loader.loadParam("roi_default/width", params_.roi_width);
+      param_loader.loadParam("roi_default/depth", params_.roi_depth);
+      param_loader.loadParam("roi_default/height", params_.roi_height);
+
+      param_loader.loadParam("roi_default/x", params_.roi_x);
+      param_loader.loadParam("roi_default/y", params_.roi_y);
+      param_loader.loadParam("roi_default/z", params_.roi_z);
+
+      param_loader.loadParam("roi_default/move_step", params_.roi_move_step);
+      param_loader.loadParam("roi_default/resize_step", params_.roi_resize_step);
+
+      param_loader.loadParam("free_above_ground_height", params_.free_above_ground_height);
+
+      if (!param_loader.loadedSuccessfully())
+      {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: Could not load all non-optional parameters. Shutting down.", node_->get_name());
+        rclcpp::shutdown();
+      }
+
+
+      // | -------------------- batch visualizer -------------------- |
+
+      bv_ = mrs_lib::BatchVisualizer(nh_, "markers", "map_frame");
+      bv_.setPointsScale(0.5);
+      bv_.setLinesScale(0.5);
+
+
+      // | ----------------------- publishers ----------------------- |
+
+      mrs_lib::PublisherHandlerOptions phopts;
+      phopts.node = node_;
+
+      pub_maker_texts_ = mrs::PublisherHandler<visualization_msgs::msg::MarkerArray>(phopts, "~/marker_texts");
+
+
+      pub_map_ = mrs_lib::PublisherHandler<octomap_msgs::msg::Octomap>(phopts, "~/octomap_out");
+
+      // | --------------------- tf boradcaster --------------------- |
+
+      tf_broadcaster_ = mrs_lib::TransformBroadcaster();
+
+      // | ---------------------- load the map ---------------------- |
+
+      if (loadFromFile(params_.map_name))
+      {
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: map loaded");
+        params_.resolution = octree_->getResolution();
+      } else
+      {
+        RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: could not load the map");
+        params_.resolution = 0;
+      }
+
+      // | --------------------------- drs -------------------------- |
+
+      params_.action_set_unknown = false;
+      params_.action_clear_outside = false;
+      params_.roi_fit_to_map = false;
+      params_.action_set_free = false;
+      params_.action_set_occupied = false;
+      params_.action_set_free_above_ground = false;
+      params_.action_set_unknown_to_free = false;
+      params_.action_remove_free = false;
+      params_.undo = false;
+      params_.action_translate = false;
+      params_.action_dilate = false;
+      params_.action_erode = false;
+      params_.action_refractor = false;
+      params_.action_filter_specs = false;
+      params_.action_copy = false;
+      params_.action_clear = false;
+      params_.action_remove_ceiling = false;
+
+      params_.action_save = false;
+      params_.action_load = false;
+
+      params_.prune = false;
+      params_.expand = false;
+      params_.prune_in_roi = false;
+      params_.expand_in_roi = false;
+
+      params_.translate_x = 0;
+      params_.translate_y = 0;
+      params_.translate_z = 0;
+
+      params_.spec_size = 2;
+
+      params_.roi_resize_plus_x = false;
+      params_.roi_resize_minus_x = false;
+
+      params_.roi_resize_plus_y = false;
+      params_.roi_resize_minus_y = false;
+
+      params_.roi_resize_plus_z = false;
+      params_.roi_resize_minus_z = false;
+
+      params_.roi_move_plus_x = false;
+      params_.roi_move_minus_x = false;
+
+      params_.roi_move_plus_y = false;
+      params_.roi_move_minus_y = false;
+
+      params_.roi_move_plus_z = false;
+      params_.roi_move_minus_z = false;
+
+      params_.fractor = 2;
+
+      drs_.reset(new Drs_t(mutex_drs_, nh_));
+      drs_->updateConfig(params_);
+      Drs_t::CallbackType f = boost::bind(&OctomapEditor::callbackDrs, this, _1, _2);
+      drs_->setCallback(f);
+
+      // | ------------------------- timers ------------------------- |
+
+      timer_main_ = this->create_wall_timer(std::chrono::milliseconds(1000), // 1000ms = 1 second
+                                            std::bind(&OctomapEditor::timerMain, this));
+
+
+      // | --------------------- finish the init -------------------- |
+
+      is_initialized_ = true;
+      RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: initialized");
     }
 
-    params.action_filter_specs = false;
-    drs_->updateConfig(params);
+    //}
 
-    map_updated_ = true;
-  }
+    // | ------------------------ callbacks ----------------------- |
 
-  //}
+    /* callbackDrs() //{ */
 
-  /* copy //{ */
-
-  if (params.action_copy) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: copy test");
-
-    saveToUndoList();
-
+    template <typename OcTree_t>
+    void OctomapEditor<OcTree_t>::callbackDrs(mrs_octomap_tools::octomap_editorConfig& params, [[maybe_unused]] uint32_t level)
     {
-      std::scoped_lock lock(mutex_octree_);
 
-      copy(octree_);
+      if (!is_initialized_)
+      {
+        return;
+      }
+
+      RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: drs action started");
+
+      {
+        std::scoped_lock lock(mutex_params_);
+
+        params_ = params;
+      }
+
+      // | --------------------- update the ROI --------------------- |
+
+      octomap::point3d roi_min(float(params_.roi_x - params_.roi_width / 2.0), float(params_.roi_y - params_.roi_depth / 2.0),
+                               float(params_.roi_z - params_.roi_height / 2.0));
+      octomap::point3d roi_max(float(params_.roi_x + params_.roi_width / 2.0), float(params_.roi_y + params_.roi_depth / 2.0),
+                               float(params_.roi_z + params_.roi_height / 2.0));
+
+      // | ------------------- process the actions ------------------ |
+
+      /* resolution //{ */
+
+      if (fabs(octree_->getResolution() - params.resolution) > 1e-3 && !params.action_load)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: changing resolution");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          setResolution(octree_, params.resolution);
+        }
+
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* refractor //{ */
+
+      if (params.action_refractor)
+      {
+
+        RCLCPP_INFO(this.get_logger(), "[OctomapEditor]: changing fractor");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          refractor(octree_, params.fractor, octree_resolution_);
+        }
+
+        params.action_refractor = false;
+        params.resolution = octree_resolution_;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* remove ceiling //{ */
+
+      if (params.action_remove_ceiling)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: removing ceiling");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          bool is_expanded = false;
+
+          removeCeiling(octree_, is_expanded);
+
+          if (is_expanded)
+          {
+            octree_->prune();
+          }
+        }
+
+        params.action_remove_ceiling = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* filter specs //{ */
+
+      if (params.action_filter_specs)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: filterin specs");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          bool is_expanded = false;
+
+          filterSpecs(octree_, is_expanded, params.spec_size);
+
+          if (is_expanded)
+          {
+            octree_->prune();
+          }
+        }
+
+        params.action_filter_specs = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* copy //{ */
+
+      if (params.action_copy)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: copy test");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          copy(octree_);
+        }
+
+        params.action_copy = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* clear //{ */
+
+      if (params.action_clear)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: clear test");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          clear(octree_);
+        }
+
+        params.action_clear = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* load //{ */
+
+      if (params.action_load)
+      {
+
+        saveToUndoList();
+
+        if (loadFromFile(params.map_name))
+        {
+          RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: map loaded");
+          params.resolution = octree_->getResolution();
+        } else
+        {
+          RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: could not load the map");
+        }
+
+        params.action_load = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* save //{ */
+
+      if (params.action_save)
+      {
+
+        if (saveToFile(params.map_name))
+        {
+          RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: map saved");
+        } else
+        {
+          RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: could not save the map");
+        }
+
+        params.action_save = false;
+        drs_->updateConfig(params);
+      }
+
+      //}
+
+      /* set unkknown //{ */
+
+      if (params.action_set_unknown)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: setting ROI unknown");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          setUnknownInsideBBX(octree_, roi_min, roi_max);
+        }
+
+        params.action_set_unknown = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* set free //{ */
+
+      if (params.action_set_free)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: setting ROI free");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          setInsideBBX(octree_, roi_min, roi_max, false);
+        }
+
+        params.action_set_free = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* set unknown to free //{ */
+
+      if (params.action_set_unknown_to_free)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: setting unknown in ROI to free");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          setUnknownToFreeInsideBBX(octree_, roi_min, roi_max);
+        }
+
+        params.action_set_unknown_to_free = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* remove free //{ */
+
+      if (params.action_remove_free)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: remove free in ROI");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          removeFreeInsideBBX(octree_, roi_min, roi_max);
+        }
+
+        params.action_remove_free = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* dilate //{ */
+
+      if (params.action_dilate)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: dilating map");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          morphologyOperation(octree_, DILATE, roi_min, roi_max);
+        }
+
+        params.action_dilate = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* erode //{ */
+
+      if (params.action_erode)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: eroding map");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          morphologyOperation(octree_, ERODE, roi_min, roi_max);
+        }
+
+        params.action_erode = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* set free above ground //{ */
+
+      if (params.action_set_free_above_ground)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: setting ROI free above ground");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          setFreeAboveGround(octree_, roi_min, roi_max, params_.free_above_ground_height);
+        }
+
+        params.action_set_free_above_ground = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* set occupied //{ */
+
+      if (params.action_set_occupied)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: setting ROI occupied");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          setInsideBBX(octree_, roi_min, roi_max, true);
+        }
+
+        params.action_set_occupied = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* clear outside //{ */
+
+      if (params.action_clear_outside)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: clearing outside ROI");
+
+        saveToUndoList();
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          clearOutsideBBX(octree_, roi_min, roi_max);
+        }
+
+        params.action_clear_outside = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* prune in roi //{ */
+
+      if (params.prune_in_roi)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: pruning in ROI");
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          mrs_lib::ScopeTimer scope_timer("Prune in ROI");
+
+          pruneInBBX(octree_, roi_min, roi_max);
+        }
+
+        params.prune_in_roi = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* expand in roi //{ */
+
+      if (params.expand_in_roi)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: expanding in ROI");
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          mrs_lib::ScopeTimer scope_timer("Expand in ROI");
+
+          expandInBBX(octree_, roi_min, roi_max);
+        }
+
+        params.expand_in_roi = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* prune //{ */
+
+      if (params.prune)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: pruning");
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          mrs_lib::ScopeTimer scope_time("prune()");
+
+          octree_->prune();
+        }
+
+        params.prune = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* expand //{ */
+
+      if (params.expand)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: expanding");
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          mrs_lib::ScopeTimer scope_time("expand()");
+
+          octree_->expand();
+        }
+
+        params.expand = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* translate //{ */
+
+      if (params.action_translate)
+      {
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: translating map");
+
+        {
+          std::scoped_lock lock(mutex_octree_);
+
+          mrs_lib::ScopeTimer scope_time("expand()");
+
+          translateMap(octree_, params.translate_x, params.translate_y, params.translate_z);
+        }
+
+        params.action_translate = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      /* roi movement //{ */
+
+      if (params.roi_move_plus_x)
+      {
+
+        params.roi_x += params.roi_move_step;
+
+        params.roi_move_plus_x = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_move_minus_x)
+      {
+
+        params.roi_x -= params.roi_move_step;
+
+        params.roi_move_minus_x = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_move_plus_y)
+      {
+
+        params.roi_y += params.roi_move_step;
+
+        params.roi_move_plus_y = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_move_minus_y)
+      {
+
+        params.roi_y -= params.roi_move_step;
+
+        params.roi_move_minus_y = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_move_plus_z)
+      {
+
+        params.roi_z += params.roi_move_step;
+
+        params.roi_move_plus_z = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_move_minus_z)
+      {
+
+        params.roi_z -= params.roi_move_step;
+
+        params.roi_move_minus_z = false;
+        drs_->updateConfig(params);
+      }
+
+      //}
+
+      /* roi resizing //{ */
+
+      if (params.roi_resize_plus_x)
+      {
+
+        params.roi_width += params.roi_resize_step;
+
+        params.roi_resize_plus_x = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_resize_minus_x)
+      {
+
+        params.roi_width -= params.roi_resize_step;
+
+        params.roi_resize_minus_x = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_resize_plus_y)
+      {
+
+        params.roi_depth += params.roi_resize_step;
+
+        params.roi_resize_plus_y = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_resize_minus_y)
+      {
+
+        params.roi_depth -= params.roi_resize_step;
+
+        params.roi_resize_minus_y = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_resize_plus_z)
+      {
+
+        params.roi_height += params.roi_resize_step;
+
+        params.roi_resize_plus_z = false;
+        drs_->updateConfig(params);
+      }
+
+      if (params.roi_move_minus_z)
+      {
+
+        params.roi_height -= params.roi_move_step;
+
+        params.roi_move_minus_z = false;
+        drs_->updateConfig(params);
+      }
+
+      //}
+
+      /* roi fit to map //{ */
+
+      if (params.roi_fit_to_map)
+      {
+
+        std::scoped_lock lock(mutex_octree_);
+
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: setting ROI to fit the map");
+
+        double min_x, min_y, min_z;
+        double max_x, max_y, max_z;
+
+        octree_->getMetricMin(min_x, min_y, min_z);
+        octree_->getMetricMax(max_x, max_y, max_z);
+
+        params.roi_x = (min_x + max_x) / 2.0;
+        params.roi_y = (min_y + max_y) / 2.0;
+        params.roi_z = (min_z + max_z) / 2.0;
+
+        params.roi_width = fabs(min_x - max_x);
+        params.roi_depth = fabs(min_y - max_y);
+        params.roi_height = fabs(min_z - max_z);
+
+        params.roi_fit_to_map = false;
+        drs_->updateConfig(params);
+      }
+
+      //}
+
+      /* undo //{ */
+
+      if (params.undo)
+      {
+
+        undo();
+
+        params.resolution = octree_->getResolution();
+
+        params.undo = false;
+        drs_->updateConfig(params);
+
+        map_updated_ = true;
+      }
+
+      //}
+
+      {
+        std::scoped_lock lock(mutex_params_);
+
+        params_ = params;
+      }
+
+      RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: drs action finished");
     }
 
-    params.action_copy = false;
-    drs_->updateConfig(params);
+    //}
 
-    map_updated_ = true;
-  }
+    // | ------------------------- timers ------------------------- |
 
-  //}
+    /* timerMain() //{ */
 
-  /* clear //{ */
-
-  if (params.action_clear) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: clear test");
-
-    saveToUndoList();
-
+    template <typename OcTree_t>
+    void OctomapEditor<OcTree_t>::timerMain()
     {
-      std::scoped_lock lock(mutex_octree_);
-
-      clear(octree_);
+      if (!is_initialized_)
+      {
+        return;
+      }
+      RCLCPP_INFO_ONCE(this->get_logger(), "[OctomapEditor]: main timer spinning");
+      publishMap();
+      publishMarkers();
+      publishTf();
     }
-
-    params.action_clear = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* load //{ */
-
-  if (params.action_load) {
-
-    saveToUndoList();
-
-    if (loadFromFile(params.map_name)) {
-      RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: map loaded");
-      params.resolution = octree_->getResolution();
-    } else {
-      RCLCPP_ERROR(this->get_logger(),"[OctomapEditor]: could not load the map");
-    }
-
-    params.action_load = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* save //{ */
-
-  if (params.action_save) {
-
-    if (saveToFile(params.map_name)) {
-      RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: map saved");
-    } else {
-      RCLCPP_ERROR(this->get_logger(),"[OctomapEditor]: could not save the map");
-    }
-
-    params.action_save = false;
-    drs_->updateConfig(params);
-  }
-
-  //}
-
-  /* set unkknown //{ */
-
-  if (params.action_set_unknown) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: setting ROI unknown");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      setUnknownInsideBBX(octree_, roi_min, roi_max);
-    }
-
-    params.action_set_unknown = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* set free //{ */
-
-  if (params.action_set_free) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: setting ROI free");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      setInsideBBX(octree_, roi_min, roi_max, false);
-    }
-
-    params.action_set_free = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* set unknown to free //{ */
-
-  if (params.action_set_unknown_to_free) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: setting unknown in ROI to free");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      setUnknownToFreeInsideBBX(octree_, roi_min, roi_max);
-    }
-
-    params.action_set_unknown_to_free = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* remove free //{ */
-
-  if (params.action_remove_free) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: remove free in ROI");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      removeFreeInsideBBX(octree_, roi_min, roi_max);
-    }
-
-    params.action_remove_free = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* dilate //{ */
-
-  if (params.action_dilate) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: dilating map");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      morphologyOperation(octree_, DILATE, roi_min, roi_max);
-    }
-
-    params.action_dilate = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* erode //{ */
-
-  if (params.action_erode) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: eroding map");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      morphologyOperation(octree_, ERODE, roi_min, roi_max);
-    }
-
-    params.action_erode = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* set free above ground //{ */
-
-  if (params.action_set_free_above_ground) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: setting ROI free above ground");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      setFreeAboveGround(octree_, roi_min, roi_max, params_.free_above_ground_height);
-    }
-
-    params.action_set_free_above_ground = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* set occupied //{ */
-
-  if (params.action_set_occupied) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: setting ROI occupied");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      setInsideBBX(octree_, roi_min, roi_max, true);
-    }
-
-    params.action_set_occupied = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* clear outside //{ */
-
-  if (params.action_clear_outside) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: clearing outside ROI");
-
-    saveToUndoList();
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      clearOutsideBBX(octree_, roi_min, roi_max);
-    }
-
-    params.action_clear_outside = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* prune in roi //{ */
-
-  if (params.prune_in_roi) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: pruning in ROI");
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      mrs_lib::ScopeTimer scope_timer("Prune in ROI");
-
-      pruneInBBX(octree_, roi_min, roi_max);
-    }
-
-    params.prune_in_roi = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* expand in roi //{ */
-
-  if (params.expand_in_roi) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: expanding in ROI");
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      mrs_lib::ScopeTimer scope_timer("Expand in ROI");
-
-      expandInBBX(octree_, roi_min, roi_max);
-    }
-
-    params.expand_in_roi = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* prune //{ */
-
-  if (params.prune) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: pruning");
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      mrs_lib::ScopeTimer scope_time("prune()");
-
-      octree_->prune();
-    }
-
-    params.prune = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* expand //{ */
-
-  if (params.expand) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: expanding");
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      mrs_lib::ScopeTimer scope_time("expand()");
-
-      octree_->expand();
-    }
-
-    params.expand = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* translate //{ */
-
-  if (params.action_translate) {
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: translating map");
-
-    {
-      std::scoped_lock lock(mutex_octree_);
-
-      mrs_lib::ScopeTimer scope_time("expand()");
-
-      translateMap(octree_, params.translate_x, params.translate_y, params.translate_z);
-    }
-
-    params.action_translate = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  /* roi movement //{ */
-
-  if (params.roi_move_plus_x) {
-
-    params.roi_x += params.roi_move_step;
-
-    params.roi_move_plus_x = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_move_minus_x) {
-
-    params.roi_x -= params.roi_move_step;
-
-    params.roi_move_minus_x = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_move_plus_y) {
-
-    params.roi_y += params.roi_move_step;
-
-    params.roi_move_plus_y = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_move_minus_y) {
-
-    params.roi_y -= params.roi_move_step;
-
-    params.roi_move_minus_y = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_move_plus_z) {
-
-    params.roi_z += params.roi_move_step;
-
-    params.roi_move_plus_z = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_move_minus_z) {
-
-    params.roi_z -= params.roi_move_step;
-
-    params.roi_move_minus_z = false;
-    drs_->updateConfig(params);
-  }
-
-  //}
-
-  /* roi resizing //{ */
-
-  if (params.roi_resize_plus_x) {
-
-    params.roi_width += params.roi_resize_step;
-
-    params.roi_resize_plus_x = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_resize_minus_x) {
-
-    params.roi_width -= params.roi_resize_step;
-
-    params.roi_resize_minus_x = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_resize_plus_y) {
-
-    params.roi_depth += params.roi_resize_step;
-
-    params.roi_resize_plus_y = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_resize_minus_y) {
-
-    params.roi_depth -= params.roi_resize_step;
-
-    params.roi_resize_minus_y = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_resize_plus_z) {
-
-    params.roi_height += params.roi_resize_step;
-
-    params.roi_resize_plus_z = false;
-    drs_->updateConfig(params);
-  }
-
-  if (params.roi_move_minus_z) {
-
-    params.roi_height -= params.roi_move_step;
-
-    params.roi_move_minus_z = false;
-    drs_->updateConfig(params);
-  }
-
-  //}
-
-  /* roi fit to map //{ */
-
-  if (params.roi_fit_to_map) {
-
-    std::scoped_lock lock(mutex_octree_);
-
-    RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: setting ROI to fit the map");
-
-    double min_x, min_y, min_z;
-    double max_x, max_y, max_z;
-
-    octree_->getMetricMin(min_x, min_y, min_z);
-    octree_->getMetricMax(max_x, max_y, max_z);
-
-    params.roi_x = (min_x + max_x) / 2.0;
-    params.roi_y = (min_y + max_y) / 2.0;
-    params.roi_z = (min_z + max_z) / 2.0;
-
-    params.roi_width  = fabs(min_x - max_x);
-    params.roi_depth  = fabs(min_y - max_y);
-    params.roi_height = fabs(min_z - max_z);
-
-    params.roi_fit_to_map = false;
-    drs_->updateConfig(params);
-  }
-
-  //}
-
-  /* undo //{ */
-
-  if (params.undo) {
-
-    undo();
-
-    params.resolution = octree_->getResolution();
-
-    params.undo = false;
-    drs_->updateConfig(params);
-
-    map_updated_ = true;
-  }
-
-  //}
-
-  {
-    std::scoped_lock lock(mutex_params_);
-
-    params_ = params;
-  }
-
-  RCLCPP_INFO(this->get_logger(),"[OctomapEditor]: drs action finished");
-}
-
-//}
-
-// | ------------------------- timers ------------------------- |
-
-/* timerMain() //{ */
-
-template <typename OcTree_t>
-void OctomapEditor<OcTree_t>::timerMain() {
-  if (!is_initialized_) {
-    return;
-  }
-  RCLCPP_INFO_ONCE(this->get_logger(), "[OctomapEditor]: main timer spinning");
-  publishMap();
-  publishMarkers();
-  publishTf();
-}
 
 //}
 
@@ -968,426 +1015,452 @@ void OctomapEditor<OcTree_t>::timerMain() {
 #include <string>
 #include <mutex>
 
-template <typename OcTree_t>
-bool OctomapEditor<OcTree_t>::loadFromFile(const std::string& filename) {
-  std::string file_path = _map_path_ + "/" + filename;
-  {
-    std::scoped_lock lock(mutex_octree_);
-    if (file_path.length() <= 3) {
-      return false;
+    template <typename OcTree_t>
+    bool OctomapEditor<OcTree_t>::loadFromFile(const std::string& filename)
+    {
+      std::string file_path = _map_path_ + "/" + filename;
+      {
+        std::scoped_lock lock(mutex_octree_);
+        if (file_path.length() <= 3)
+        {
+          return false;
+        }
+        std::string suffix = file_path.substr(file_path.length() - 3, 3);
+        if (suffix == ".bt")
+        {
+          OcTree_t* tree = new OcTree_t(1.0);
+          bool tree_read = tree->readBinary(file_path);
+          if (!tree_read)
+          {
+            RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: could not read binary OcTree file");
+            return false;
+          }
+          octree_ = std::shared_ptr<OcTree_t>(tree);
+          if (!octree_)
+          {
+            RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: Could not read OcTree file. Are you using correct octree_type?");
+            return false;
+          }
+        } else if (suffix == ".ot")
+        {
+          auto tree = octomap::AbstractOcTree::read(file_path);
+          if (!tree)
+          {
+            return false;
+          }
+          OcTree_t* OcTree = dynamic_cast<OcTree_t*>(tree);
+          octree_ = std::shared_ptr<OcTree_t>(OcTree);
+          if (!octree_)
+          {
+            RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: Could not read OcTree file. Are you using correct octree_type?");
+            return false;
+          }
+        } else
+        {
+          return false;
+        }
+        octree_resolution_ = octree_->getResolution();
+      }
+      return true;
     }
-    std::string suffix = file_path.substr(file_path.length() - 3, 3);
-    if (suffix == ".bt") {
-      OcTree_t* tree = new OcTree_t(1.0);
-      bool tree_read = tree->readBinary(file_path);
-      if (!tree_read) {
-        RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: could not read binary OcTree file");
-        return false;
-      }
-      octree_ = std::shared_ptr<OcTree_t>(tree);
-      if (!octree_) {
-        RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: Could not read OcTree file. Are you using correct octree_type?");
-        return false;
-      }
-    } else if (suffix == ".ot") {
-      auto tree = octomap::AbstractOcTree::read(file_path);
-      if (!tree) {
-        return false;
-      }
-      OcTree_t* OcTree = dynamic_cast<OcTree_t*>(tree);
-      octree_ = std::shared_ptr<OcTree_t>(OcTree);
-      if (!octree_) {
-        RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: Could not read OcTree file. Are you using correct octree_type?");
-        return false;
-      }
-    } else {
-      return false;
-    }
-    octree_resolution_ = octree_->getResolution();
-  }
-  return true;
-}
 
-/* template <> */
-/* bool OctomapEditor<octomap::OcTree>::loadFromFile(const std::string& filename) { */
+    /* template <> */
+    /* bool OctomapEditor<octomap::OcTree>::loadFromFile(const std::string& filename) { */
 
-/*   std::string file_path = _map_path_ + "/" + filename; */
+    /*   std::string file_path = _map_path_ + "/" + filename; */
 
-/*   { */
-/*     std::scoped_lock lock(mutex_octree_); */
+    /*   { */
+    /*     std::scoped_lock lock(mutex_octree_); */
 
-/*     if (file_path.length() <= 3) */
-/*       return false; */
+    /*     if (file_path.length() <= 3) */
+    /*       return false; */
 
-/*     std::string suffix = file_path.substr(file_path.length() - 3, 3); */
+    /*     std::string suffix = file_path.substr(file_path.length() - 3, 3); */
 
-/*     if (suffix == ".bt") { */
+    /*     if (suffix == ".bt") { */
 
-/*       octomap::OcTree* tree = new octomap::OcTree(file_path); */
-/*       /1* octomap::OcTree* tree = new octomap::OcTree(file_path); *1/ */
+    /*       octomap::OcTree* tree = new octomap::OcTree(file_path); */
+    /*       /1* octomap::OcTree* tree = new octomap::OcTree(file_path); *1/ */
 
-/*       octree_ = std::shared_ptr<octomap::OcTree>(tree); */
+    /*       octree_ = std::shared_ptr<octomap::OcTree>(tree); */
 
-/*       if (!octree_) { */
-/*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
-/*         return false; */
-/*       } */
+    /*       if (!octree_) { */
+    /*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
+    /*         return false; */
+    /*       } */
 
-/*     } else if (suffix == ".ot") { */
-
-/*       auto tree = octomap::AbstractOcTree::read(file_path); */
+    /*     } else if (suffix == ".ot") { */
 
-/*       if (!tree) { */
-/*         return false; */
-/*       } */
+    /*       auto tree = octomap::AbstractOcTree::read(file_path); */
 
-/*       octomap::OcTree* OcTree = dynamic_cast<octomap::OcTree*>(tree); */
-/*       octree_          = std::shared_ptr<octomap::OcTree>(OcTree); */
-
-/*       if (!octree_) { */
-/*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
-/*         return false; */
-/*       } */
-
-/*     } else { */
-/*       return false; */
-/*     } */
-
-/*     octree_resolution_ = octree_->getResolution(); */
-/*   } */
-
-/*   return true; */
-/* } */
-
-/* template <> */
-/* bool OctomapEditor<octomap::ColorOcTree>::loadFromFile(const std::string& filename) { */
-
-/*   std::string file_path = _map_path_ + "/" + filename; */
-
-/*   { */
-/*     std::scoped_lock lock(mutex_octree_); */
-
-/*     if (file_path.length() <= 3) */
-/*       return false; */
-
-/*     std::string suffix = file_path.substr(file_path.length() - 3, 3); */
-
-/*     if (suffix == ".bt") { */
-
-/*       ROS_ERROR("[OctomapEditor]: Cannot read .bt ColorOcTree file"); */
-
-/*     } else if (suffix == ".ot") { */
-
-/*       auto tree = octomap::AbstractOcTree::read(file_path); */
-
-/*       if (!tree) { */
-/*         return false; */
-/*       } */
-
-/*       octomap::ColorOcTree* OcTree = dynamic_cast<octomap::ColorOcTree*>(tree); */
-/*       octree_          = std::shared_ptr<octomap::ColorOcTree>(OcTree); */
-
-/*       if (!octree_) { */
-/*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
-/*         return false; */
-/*       } */
-
-/*     } else { */
-/*       return false; */
-/*     } */
-
-/*     octree_resolution_ = octree_->getResolution(); */
-/*   } */
-
-/*   return true; */
-/* } */
-
-//}
-
-/* saveToFile() //{ */
-
-template <typename OcTree_t>
-bool OctomapEditor<OcTree_t>::saveToFile(const std::string& filename) {
-  std::scoped_lock lock(mutex_octree_);
-  std::string file_path        = _map_path_ + "/" + filename + ".ot";
-  std::string tmp_file_path    = _map_path_ + "/tmp_" + filename + ".ot";
-  std::string backup_file_path = _map_path_ + "/" + filename + "_backup.ot";
-
-  try {
-    std::filesystem::rename(file_path, backup_file_path);
-  }
-  catch (std::filesystem::filesystem_error& e) {
-    RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: failed to copy map to the backup path");
-  }
-
-  if (!octree_->write(tmp_file_path)) {
-    RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: error writing to file '%s'", file_path.c_str());
-    return false;
-  }
-
-  try {
-    std::filesystem::rename(tmp_file_path, file_path);
-  }
-  catch (std::filesystem::filesystem_error& e) {
-    RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: failed to rename temporary file to final path");
-  }
-
-  return true;
-}
-
-//}
-
-/* publishMap() //{ */
-template <typename OcTree_t>
-void OctomapEditor<OcTree_t>::publishMap(void) {
-  std::scoped_lock lock(mutex_octree_);
-  if (octree_) {
-    octomap_msgs::msg::Octomap map;
-    map.header.frame_id = "map_frame";
-    map.header.stamp = this->now(); // or this->get_clock()->now()
-    if (octomap_msgs::fullMapToMsg(*octree_, map)) {
-      pub_map_->publish(map);
-    } else {
-      RCLCPP_ERROR(this->get_logger(), "[OctomapServer]: error serializing local octomap to full representation");
-    }
-  }
-}
-
-
-//}
-
-/* publishMarkers() //{ */
-template <typename OcTree_t>
-void OctomapEditor<OcTree_t>::publishMarkers(void) {
-  auto params = mrs_lib::get_mutexed(mutex_params_, params_);
-  bv_.clearBuffers();
-  bv_.clearVisuals();
-
-  // ROI corners
-  Eigen::Vector3d bot1(params.roi_x - params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
-  Eigen::Vector3d bot2(params.roi_x + params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
-  Eigen::Vector3d bot3(params.roi_x + params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
-  Eigen::Vector3d bot4(params.roi_x - params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
-  Eigen::Vector3d top1(params.roi_x - params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
-  Eigen::Vector3d top2(params.roi_x + params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
-  Eigen::Vector3d top3(params.roi_x + params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
-  Eigen::Vector3d top4(params.roi_x - params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
-
-  // Add rays for the edges of the ROI box
-  mrs_lib::geometry::Ray ray1 = mrs_lib::geometry::Ray(bot1, bot2);
-  mrs_lib::geometry::Ray ray2 = mrs_lib::geometry::Ray(bot2, bot3);
-  mrs_lib::geometry::Ray ray3 = mrs_lib::geometry::Ray(bot3, bot4);
-  mrs_lib::geometry::Ray ray4 = mrs_lib::geometry::Ray(bot4, bot1);
-  mrs_lib::geometry::Ray ray5 = mrs_lib::geometry::Ray(top1, top2);
-  mrs_lib::geometry::Ray ray6 = mrs_lib::geometry::Ray(top2, top3);
-  mrs_lib::geometry::Ray ray7 = mrs_lib::geometry::Ray(top3, top4);
-  mrs_lib::geometry::Ray ray8 = mrs_lib::geometry::Ray(top4, top1);
-  mrs_lib::geometry::Ray ray9  = mrs_lib::geometry::Ray(bot1, top1);
-  mrs_lib::geometry::Ray ray10 = mrs_lib::geometry::Ray(bot2, top2);
-  mrs_lib::geometry::Ray ray11 = mrs_lib::geometry::Ray(bot3, top3);
-  mrs_lib::geometry::Ray ray12 = mrs_lib::geometry::Ray(bot4, top4);
-
-  bv_.addRay(ray1, 1, 0, 0, 1.0);
-  bv_.addRay(ray2, 1, 0, 0, 1.0);
-  bv_.addRay(ray3, 1, 0, 0, 1.0);
-  bv_.addRay(ray4, 1, 0, 0, 1.0);
-  bv_.addRay(ray5, 1, 0, 0, 1.0);
-  bv_.addRay(ray6, 1, 0, 0, 1.0);
-  bv_.addRay(ray7, 1, 0, 0, 1.0);
-  bv_.addRay(ray8, 1, 0, 0, 1.0);
-  bv_.addRay(ray9, 1, 0, 0, 1.0);
-  bv_.addRay(ray10, 1, 0, 0, 1.0);
-  bv_.addRay(ray11, 1, 0, 0, 1.0);
-  bv_.addRay(ray12, 1, 0, 0, 1.0);
-
-  visualization_msgs::msg::MarkerArray text_markers;
-  int marker_id = 0;
-
-  // Width label
-  {
-    visualization_msgs::msg::Marker text_marker;
-    text_marker.header.frame_id = "map_frame";
-    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-    text_marker.color.a = 1;
-    text_marker.scale.z = fabs(top1.x() - top2.x()) / 10;
-    text_marker.color.r = 1;
-    text_marker.color.g = 0;
-    text_marker.color.b = 0;
-    text_marker.id = marker_id++;
-    text_marker.text = "width";
-    text_marker.pose.position.x = (top1.x() + top2.x()) / 2.0;
-    text_marker.pose.position.y = (top1.y() + top2.y()) / 2.0;
-    text_marker.pose.position.z = top1.z();
-    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
-    text_markers.markers.push_back(text_marker);
-  }
-
-  // Depth label
-  {
-    visualization_msgs::msg::Marker text_marker;
-    text_marker.header.frame_id = "map_frame";
-    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-    text_marker.color.a = 1;
-    text_marker.scale.z = fabs(top2.y() - top3.y()) / 10;
-    text_marker.color.r = 1;
-    text_marker.color.g = 0;
-    text_marker.color.b = 0;
-    text_marker.id = marker_id++;
-    text_marker.text = "depth";
-    text_marker.pose.position.x = (top2.x() + top3.x()) / 2.0;
-    text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
-    text_marker.pose.position.z = top2.z();
-    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
-    text_markers.markers.push_back(text_marker);
-  }
-
-  // +X label
-  {
-    visualization_msgs::msg::Marker text_marker;
-    text_marker.header.frame_id = "map_frame";
-    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-    text_marker.color.a = 1;
-    text_marker.scale.z = fabs(top2.y() - top3.y()) / 10;
-    text_marker.color.r = 1;
-    text_marker.color.g = 0;
-    text_marker.color.b = 0;
-    text_marker.id = marker_id++;
-    text_marker.text = "+x";
-    text_marker.pose.position.x = params.roi_x + 1.4 * (top2.x() - params.roi_x);
-    text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
-    text_marker.pose.position.z = top1.z();
-    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
-    text_markers.markers.push_back(text_marker);
-  }
-
-  // -X label
-  {
-    visualization_msgs::msg::Marker text_marker;
-    text_marker.header.frame_id = "map_frame";
-    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-    text_marker.color.a = 1;
-    text_marker.scale.z = fabs(top2.y() - top3.y()) / 10;
-    text_marker.color.r = 1;
-    text_marker.color.g = 0;
-    text_marker.color.b = 0;
-    text_marker.id = marker_id++;
-    text_marker.text = "-x";
-    text_marker.pose.position.x = params.roi_x + 1.4 * (top1.x() - params.roi_x);
-    text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
-    text_marker.pose.position.z = top1.z();
-    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
-    text_markers.markers.push_back(text_marker);
-  }
-
-  // +Y label
-  {
-    visualization_msgs::msg::Marker text_marker;
-    text_marker.header.frame_id = "map_frame";
-    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-    text_marker.color.a = 1;
-    text_marker.scale.z = fabs(top1.x() - top2.x()) / 10;
-    text_marker.color.r = 1;
-    text_marker.color.g = 0;
-    text_marker.color.b = 0;
-    text_marker.id = marker_id++;
-    text_marker.text = "+y";
-    text_marker.pose.position.x = (top3.x() + top4.x()) / 2.0;
-    text_marker.pose.position.y = params.roi_y + 1.4 * (top3.y() - params.roi_y);
-    text_marker.pose.position.z = top3.z();
-    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
-    text_markers.markers.push_back(text_marker);
-  }
-
-  // -Y label
-  {
-    visualization_msgs::msg::Marker text_marker;
-    text_marker.header.frame_id = "map_frame";
-    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-    text_marker.color.a = 1;
-    text_marker.scale.z = fabs(top1.x() - top2.x()) / 10;
-    text_marker.color.r = 1;
-    text_marker.color.g = 0;
-    text_marker.color.b = 0;
-    text_marker.id = marker_id++;
-    text_marker.text = "-y";
-    text_marker.pose.position.x = (top3.x() + top4.x()) / 2.0;
-    text_marker.pose.position.y = params.roi_y + 1.4 * (top1.y() - params.roi_y);
-    text_marker.pose.position.z = top3.z();
-    text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
-    text_markers.markers.push_back(text_marker);
-  }
-
-  pub_marker_texts_->publish(text_markers);
-  bv_.publish();
-}
-
-//}
-
-/* publishTf() //{ */
-
-template <typename OcTree_t>
-void OctomapEditor<OcTree_t>::publishTf(void) {
-  auto params = mrs_lib::get_mutexed(mutex_params_, params_);
-
-  // Create a TransformStamped message
-  geometry_msgs::msg::TransformStamped tf;
-  tf.header.stamp = this->now(); // or this->get_clock()->now()
-  tf.header.frame_id = "map_frame";
-  tf.child_frame_id = "roi_frame";
-
-  // Set translation
-  tf.transform.translation.x = params.roi_x;
-  tf.transform.translation.y = params.roi_y;
-  tf.transform.translation.z = params.roi_z;
-
-  // Set rotation (identity quaternion)
-  tf.transform.rotation = mrs_lib::AttitudeConverter(0, 0, 0);
-
-  // Publish the transform
-  try {
-    tf_broadcaster_->sendTransform(tf);
-  }
-  catch (...) {
-    RCLCPP_ERROR(this->get_logger(), "[Odometry]: Exception caught during publishing TF: %s - %s.",
-                 tf.child_frame_id.c_str(), tf.header.frame_id.c_str());
-  }
-}
-
-//}
-
-/* undo() //{ */
-
-template <typename OcTree_t>
-void OctomapEditor<OcTree_t>::undo(void) {
-  if (undoo_list_.size() > 0) {
+    /*       if (!tree) { */
+    /*         return false; */
+    /*       } */
+
+    /*       octomap::OcTree* OcTree = dynamic_cast<octomap::OcTree*>(tree); */
+    /*       octree_          = std::shared_ptr<octomap::OcTree>(OcTree); */
+
+    /*       if (!octree_) { */
+    /*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
+    /*         return false; */
+    /*       } */
+
+    /*     } else { */
+    /*       return false; */
+    /*     } */
+
+    /*     octree_resolution_ = octree_->getResolution(); */
+    /*   } */
+
+    /*   return true; */
+    /* } */
+
+    /* template <> */
+    /* bool OctomapEditor<octomap::ColorOcTree>::loadFromFile(const std::string& filename) { */
+
+    /*   std::string file_path = _map_path_ + "/" + filename; */
+
+    /*   { */
+    /*     std::scoped_lock lock(mutex_octree_); */
+
+    /*     if (file_path.length() <= 3) */
+    /*       return false; */
+
+    /*     std::string suffix = file_path.substr(file_path.length() - 3, 3); */
+
+    /*     if (suffix == ".bt") { */
+
+    /*       ROS_ERROR("[OctomapEditor]: Cannot read .bt ColorOcTree file"); */
+
+    /*     } else if (suffix == ".ot") { */
+
+    /*       auto tree = octomap::AbstractOcTree::read(file_path); */
+
+    /*       if (!tree) { */
+    /*         return false; */
+    /*       } */
+
+    /*       octomap::ColorOcTree* OcTree = dynamic_cast<octomap::ColorOcTree*>(tree); */
+    /*       octree_          = std::shared_ptr<octomap::ColorOcTree>(OcTree); */
+
+    /*       if (!octree_) { */
+    /*         ROS_ERROR("[OctomapEditor]: could not read OcTree file"); */
+    /*         return false; */
+    /*       } */
+
+    /*     } else { */
+    /*       return false; */
+    /*     } */
+
+    /*     octree_resolution_ = octree_->getResolution(); */
+    /*   } */
+
+    /*   return true; */
+    /* } */
+
+    //}
+
+    /* saveToFile() //{ */
+
+    template <typename OcTree_t>
+    bool OctomapEditor<OcTree_t>::saveToFile(const std::string& filename)
     {
       std::scoped_lock lock(mutex_octree_);
-      octree_ = undoo_list_.back();
-      undoo_list_.pop_back();
+      std::string file_path = _map_path_ + "/" + filename + ".ot";
+      std::string tmp_file_path = _map_path_ + "/tmp_" + filename + ".ot";
+      std::string backup_file_path = _map_path_ + "/" + filename + "_backup.ot";
+
+      try
+      {
+        std::filesystem::rename(file_path, backup_file_path);
+      }
+      catch (std::filesystem::filesystem_error& e)
+      {
+        RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: failed to copy map to the backup path");
+      }
+
+      if (!octree_->write(tmp_file_path))
+      {
+        RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: error writing to file '%s'", file_path.c_str());
+        return false;
+      }
+
+      try
+      {
+        std::filesystem::rename(tmp_file_path, file_path);
+      }
+      catch (std::filesystem::filesystem_error& e)
+      {
+        RCLCPP_ERROR(this->get_logger(), "[OctomapEditor]: failed to rename temporary file to final path");
+      }
+
+      return true;
     }
-    RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: undone last change");
-  } else {
-    RCLCPP_WARN(this->get_logger(), "[OctomapEditor]: already at the last change");
-  }
-}
 
-//}
+    //}
 
-/* saveToUndoList() //{ */
+    /* publishMap() //{ */
+    template <typename OcTree_t>
+    void OctomapEditor<OcTree_t>::publishMap(void)
+    {
+      std::scoped_lock lock(mutex_octree_);
+      if (octree_)
+      {
+        octomap_msgs::msg::Octomap map;
+        map.header.frame_id = "map_frame";
+        map.header.stamp = this->now(); // or this->get_clock()->now()
+        if (octomap_msgs::fullMapToMsg(*octree_, map))
+        {
+          pub_map_->publish(map);
+        } else
+        {
+          RCLCPP_ERROR(this->get_logger(), "[OctomapServer]: error serializing local octomap to full representation");
+        }
+      }
+    }
 
-template <typename OcTree_t>
-void OctomapEditor<OcTree_t>::saveToUndoList(void) {
-  std::scoped_lock lock(mutex_octree_);
-  std::shared_ptr<OcTree_t> octree_tmp = std::make_shared<OcTree_t>(*octree_);
-  undoo_list_.push_back(octree_tmp);
-}
+
+    //}
+
+    /* publishMarkers() //{ */
+    template <typename OcTree_t>
+    void OctomapEditor<OcTree_t>::publishMarkers(void)
+    {
+      auto params = mrs_lib::get_mutexed(mutex_params_, params_);
+      bv_.clearBuffers();
+      bv_.clearVisuals();
+
+      // ROI corners
+      Eigen::Vector3d bot1(params.roi_x - params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
+      Eigen::Vector3d bot2(params.roi_x + params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
+      Eigen::Vector3d bot3(params.roi_x + params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
+      Eigen::Vector3d bot4(params.roi_x - params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z - params.roi_height / 2.0);
+      Eigen::Vector3d top1(params.roi_x - params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
+      Eigen::Vector3d top2(params.roi_x + params.roi_width / 2.0, params.roi_y - params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
+      Eigen::Vector3d top3(params.roi_x + params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
+      Eigen::Vector3d top4(params.roi_x - params.roi_width / 2.0, params.roi_y + params.roi_depth / 2.0, params.roi_z + params.roi_height / 2.0);
+
+      // Add rays for the edges of the ROI box
+      mrs_lib::geometry::Ray ray1 = mrs_lib::geometry::Ray(bot1, bot2);
+      mrs_lib::geometry::Ray ray2 = mrs_lib::geometry::Ray(bot2, bot3);
+      mrs_lib::geometry::Ray ray3 = mrs_lib::geometry::Ray(bot3, bot4);
+      mrs_lib::geometry::Ray ray4 = mrs_lib::geometry::Ray(bot4, bot1);
+      mrs_lib::geometry::Ray ray5 = mrs_lib::geometry::Ray(top1, top2);
+      mrs_lib::geometry::Ray ray6 = mrs_lib::geometry::Ray(top2, top3);
+      mrs_lib::geometry::Ray ray7 = mrs_lib::geometry::Ray(top3, top4);
+      mrs_lib::geometry::Ray ray8 = mrs_lib::geometry::Ray(top4, top1);
+      mrs_lib::geometry::Ray ray9 = mrs_lib::geometry::Ray(bot1, top1);
+      mrs_lib::geometry::Ray ray10 = mrs_lib::geometry::Ray(bot2, top2);
+      mrs_lib::geometry::Ray ray11 = mrs_lib::geometry::Ray(bot3, top3);
+      mrs_lib::geometry::Ray ray12 = mrs_lib::geometry::Ray(bot4, top4);
+
+      bv_.addRay(ray1, 1, 0, 0, 1.0);
+      bv_.addRay(ray2, 1, 0, 0, 1.0);
+      bv_.addRay(ray3, 1, 0, 0, 1.0);
+      bv_.addRay(ray4, 1, 0, 0, 1.0);
+      bv_.addRay(ray5, 1, 0, 0, 1.0);
+      bv_.addRay(ray6, 1, 0, 0, 1.0);
+      bv_.addRay(ray7, 1, 0, 0, 1.0);
+      bv_.addRay(ray8, 1, 0, 0, 1.0);
+      bv_.addRay(ray9, 1, 0, 0, 1.0);
+      bv_.addRay(ray10, 1, 0, 0, 1.0);
+      bv_.addRay(ray11, 1, 0, 0, 1.0);
+      bv_.addRay(ray12, 1, 0, 0, 1.0);
+
+      visualization_msgs::msg::MarkerArray text_markers;
+      int marker_id = 0;
+
+      // Width label
+      {
+        visualization_msgs::msg::Marker text_marker;
+        text_marker.header.frame_id = "map_frame";
+        text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+        text_marker.color.a = 1;
+        text_marker.scale.z = fabs(top1.x() - top2.x()) / 10;
+        text_marker.color.r = 1;
+        text_marker.color.g = 0;
+        text_marker.color.b = 0;
+        text_marker.id = marker_id++;
+        text_marker.text = "width";
+        text_marker.pose.position.x = (top1.x() + top2.x()) / 2.0;
+        text_marker.pose.position.y = (top1.y() + top2.y()) / 2.0;
+        text_marker.pose.position.z = top1.z();
+        text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+        text_markers.markers.push_back(text_marker);
+      }
+
+      // Depth label
+      {
+        visualization_msgs::msg::Marker text_marker;
+        text_marker.header.frame_id = "map_frame";
+        text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+        text_marker.color.a = 1;
+        text_marker.scale.z = fabs(top2.y() - top3.y()) / 10;
+        text_marker.color.r = 1;
+        text_marker.color.g = 0;
+        text_marker.color.b = 0;
+        text_marker.id = marker_id++;
+        text_marker.text = "depth";
+        text_marker.pose.position.x = (top2.x() + top3.x()) / 2.0;
+        text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
+        text_marker.pose.position.z = top2.z();
+        text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+        text_markers.markers.push_back(text_marker);
+      }
+
+      // +X label
+      {
+        visualization_msgs::msg::Marker text_marker;
+        text_marker.header.frame_id = "map_frame";
+        text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+        text_marker.color.a = 1;
+        text_marker.scale.z = fabs(top2.y() - top3.y()) / 10;
+        text_marker.color.r = 1;
+        text_marker.color.g = 0;
+        text_marker.color.b = 0;
+        text_marker.id = marker_id++;
+        text_marker.text = "+x";
+        text_marker.pose.position.x = params.roi_x + 1.4 * (top2.x() - params.roi_x);
+        text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
+        text_marker.pose.position.z = top1.z();
+        text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+        text_markers.markers.push_back(text_marker);
+      }
+
+      // -X label
+      {
+        visualization_msgs::msg::Marker text_marker;
+        text_marker.header.frame_id = "map_frame";
+        text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+        text_marker.color.a = 1;
+        text_marker.scale.z = fabs(top2.y() - top3.y()) / 10;
+        text_marker.color.r = 1;
+        text_marker.color.g = 0;
+        text_marker.color.b = 0;
+        text_marker.id = marker_id++;
+        text_marker.text = "-x";
+        text_marker.pose.position.x = params.roi_x + 1.4 * (top1.x() - params.roi_x);
+        text_marker.pose.position.y = (top2.y() + top3.y()) / 2.0;
+        text_marker.pose.position.z = top1.z();
+        text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+        text_markers.markers.push_back(text_marker);
+      }
+
+      // +Y label
+      {
+        visualization_msgs::msg::Marker text_marker;
+        text_marker.header.frame_id = "map_frame";
+        text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+        text_marker.color.a = 1;
+        text_marker.scale.z = fabs(top1.x() - top2.x()) / 10;
+        text_marker.color.r = 1;
+        text_marker.color.g = 0;
+        text_marker.color.b = 0;
+        text_marker.id = marker_id++;
+        text_marker.text = "+y";
+        text_marker.pose.position.x = (top3.x() + top4.x()) / 2.0;
+        text_marker.pose.position.y = params.roi_y + 1.4 * (top3.y() - params.roi_y);
+        text_marker.pose.position.z = top3.z();
+        text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+        text_markers.markers.push_back(text_marker);
+      }
+
+      // -Y label
+      {
+        visualization_msgs::msg::Marker text_marker;
+        text_marker.header.frame_id = "map_frame";
+        text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+        text_marker.color.a = 1;
+        text_marker.scale.z = fabs(top1.x() - top2.x()) / 10;
+        text_marker.color.r = 1;
+        text_marker.color.g = 0;
+        text_marker.color.b = 0;
+        text_marker.id = marker_id++;
+        text_marker.text = "-y";
+        text_marker.pose.position.x = (top3.x() + top4.x()) / 2.0;
+        text_marker.pose.position.y = params.roi_y + 1.4 * (top1.y() - params.roi_y);
+        text_marker.pose.position.z = top3.z();
+        text_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+        text_markers.markers.push_back(text_marker);
+      }
+
+      pub_marker_texts_->publish(text_markers);
+      bv_.publish();
+    }
+
+    //}
+
+    /* publishTf() //{ */
+
+    template <typename OcTree_t>
+    void OctomapEditor<OcTree_t>::publishTf(void)
+    {
+      auto params = mrs_lib::get_mutexed(mutex_params_, params_);
+
+      // Create a TransformStamped message
+      geometry_msgs::msg::TransformStamped tf;
+      tf.header.stamp = this->now(); // or this->get_clock()->now()
+      tf.header.frame_id = "map_frame";
+      tf.child_frame_id = "roi_frame";
+
+      // Set translation
+      tf.transform.translation.x = params.roi_x;
+      tf.transform.translation.y = params.roi_y;
+      tf.transform.translation.z = params.roi_z;
+
+      // Set rotation (identity quaternion)
+      tf.transform.rotation = mrs_lib::AttitudeConverter(0, 0, 0);
+
+      // Publish the transform
+      try
+      {
+        tf_broadcaster_->sendTransform(tf);
+      }
+      catch (...)
+      {
+        RCLCPP_ERROR(this->get_logger(), "[Odometry]: Exception caught during publishing TF: %s - %s.", tf.child_frame_id.c_str(), tf.header.frame_id.c_str());
+      }
+    }
+
+    //}
+
+    /* undo() //{ */
+
+    template <typename OcTree_t>
+    void OctomapEditor<OcTree_t>::undo(void)
+    {
+      if (undoo_list_.size() > 0)
+      {
+        {
+          std::scoped_lock lock(mutex_octree_);
+          octree_ = undoo_list_.back();
+          undoo_list_.pop_back();
+        }
+        RCLCPP_INFO(this->get_logger(), "[OctomapEditor]: undone last change");
+      } else
+      {
+        RCLCPP_WARN(this->get_logger(), "[OctomapEditor]: already at the last change");
+      }
+    }
+
+    //}
+
+    /* saveToUndoList() //{ */
+
+    template <typename OcTree_t>
+    void OctomapEditor<OcTree_t>::saveToUndoList(void)
+    {
+      std::scoped_lock lock(mutex_octree_);
+      std::shared_ptr<OcTree_t> octree_tmp = std::make_shared<OcTree_t>(*octree_);
+      undoo_list_.push_back(octree_tmp);
+    }
 
 
-//}
+    //}
 
-}  // namespace octomap_rviz_visualizer
+  } // namespace octomap_rviz_visualizer
 
-}  // namespace mrs_octomap_tools
+} // namespace mrs_octomap_tools
 
 // Register as a component
 #include <rclcpp_components/register_node_macro.hpp>
