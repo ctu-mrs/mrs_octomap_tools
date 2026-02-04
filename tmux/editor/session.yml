@@ -1,20 +1,20 @@
 name: editor
 root: ./
 startup_window: editor
-pre_window: export ROS_MASTER_URI=http://localhost:11311; export ROS_IP=127.0.0.1; export UAV_NAME=uav1
+pre_window: export RMW_IMPLEMENTATION=rmw_zenoh_cpp; export UAV_NAME=uav1
 windows:
   - editor:
       layout: tiled
       panes:
-        - waitForRos; roslaunch mrs_octomap_tools octomap_editor.launch
+        - waitForCore && ros2 launch mrs_octomap_tools octomap_editor.launch.py
   - reconfigure:
       layout: tiled
       panes:
-        - waitForRos; rosrun rqt_reconfigure rqt_reconfigure
+        - waitForCore && ros2 run rqt_reconfigure rqt_reconfigure
   - rviz:
       layout: tiled
       panes:
-        - waitForRos; rosrun rviz rviz -d ./octomap_editor.rviz
+        - waitForCore && ros2 run rviz2 rviz2 -d ./octomap_editor.rviz --ros-args -p use_sim_time:=true
   - roscore:
       layout: tiled
       panes:
@@ -22,4 +22,4 @@ windows:
   - layout:
       layout: tiled
       panes:
-        - waitForRos; sleep 3; ~/.i3/layout_manager.sh ./layout.json
+        - waitForCore && sleep 3; ~/.i3/layout_manager.sh ./layout.json
